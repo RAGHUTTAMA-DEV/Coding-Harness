@@ -1,4 +1,4 @@
-# 🛸 Antigravity Custom Agent Harness (v3)
+# Coding - Harness
 
 An advanced, Claude-Code-style agent execution loop built completely from scratch in TypeScript and running under **Bun**. It orchestrates tool-calling, context memory, and permission gating natively, without using external agent frameworks (like LangChain or LangGraph).
 

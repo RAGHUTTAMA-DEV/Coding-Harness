@@ -1,0 +1,12 @@
+{
+  "name": "agent-harness",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/cli/repl.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "bun-types": "^1.3.14"
+  }
+}

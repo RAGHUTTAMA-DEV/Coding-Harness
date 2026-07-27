@@ -1,4 +1,4 @@
-import { ToolDefinition } from "../client";
+import { ChatModelClient, ToolDefinition } from "../client";
 import { readTool } from "./read";
 import { writeTool } from "./write";
 import { editTool } from "./edit";
@@ -7,9 +7,12 @@ import { checkSyntaxTool } from "./checkSyntax";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
 import { todoReadTool, todoWriteTool } from "./todo";
+import { subAgentTool } from "./subagent";
 import { Tool } from "./types";
 
 export type { Tool };
+
+export { activeClient, setActiveClient } from "./activeClient";
 
 // Registry containing all available tools
 export const tools: Tool[] = [
@@ -21,7 +24,8 @@ export const tools: Tool[] = [
   globTool,
   grepTool,
   todoReadTool,
-  todoWriteTool
+  todoWriteTool,
+  subAgentTool
 ];
 
 // Helper to look up a tool by name
@@ -37,3 +41,4 @@ export function getToolDefinitions(): ToolDefinition[] {
     input_schema: t.input_schema
   }));
 }
+

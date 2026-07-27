@@ -37,13 +37,13 @@ h1 {
   right: 1rem;
 }
 
-#todo-form {
+#shittest-form {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
 }
 
-#todo-input {
+#shittest-input {
   flex: 1;
   padding: 0.75rem 1rem;
   border: 1px solid #e2e8f0;
@@ -53,11 +53,11 @@ h1 {
   transition: border-color 0.2s;
 }
 
-#todo-input:focus {
+#shittest-input:focus {
   border-color: #6366f1;
 }
 
-#todo-form button {
+#shittest-form button {
   background-color: #6366f1;
   color: white;
   padding: 0.75rem 1.25rem;

@@ -2,7 +2,7 @@ import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
 import { ChatModelClient, Message, ToolCall } from "./client";
-import { getToolByName, getToolDefinitions } from "./tools";
+import { getToolByName, getToolDefinitions, setActiveClient, tools } from "./tools";
 import { PermissionGate } from "./permissions/permissionGate";
 import { ContextManager } from "./context/contextManager";
 
@@ -22,15 +22,21 @@ export class Agent {
   private systemPrompt: string;
   public isInterrupted: boolean = false;
   public isRunning: boolean = false;
+  private isSubAgent: boolean = false;
 
   constructor(options: {
     client: ChatModelClient;
     rl?: readline.Interface;
     systemPrompt?: string;
     tokenThreshold?: number;
+    isSubAgent?: boolean;
   }) {
     this.client = options.client;
     this.rl = options.rl;
+    this.isSubAgent = options.isSubAgent || false;
+
+    // Track active client in tool registry
+    setActiveClient(this.client);
     
     // Set a solid default system prompt if none is provided
     this.systemPrompt = options.systemPrompt || `You are an advanced agentic coding assistant called Antigravity.
@@ -85,6 +91,7 @@ Strict Guidelines:
   setClient(client: ChatModelClient) {
     this.client = client;
     this.contextManager.setClient(client);
+    setActiveClient(client);
   }
 
   /**
@@ -101,6 +108,13 @@ Strict Guidelines:
     this.contextManager.clearHistory();
   }
 
+  /**
+   * Set message history directly (useful for resuming sessions)
+   */
+  setHistory(msgs: Message[]) {
+    this.contextManager.setHistory(msgs);
+  }
+
   getTotalTokens(): number {
     return this.contextManager.getTotalTokens();
   }
@@ -109,6 +123,21 @@ Strict Guidelines:
     return this.contextManager.getTokenThreshold();
   }
 
+  /**
+   * Returns tool definitions available to the agent.
+   * If running as a sub-agent, restricts definitions to safe, read-only tools.
+   */
+  private getAvailableToolDefinitions(): any[] {
+    let filteredTools = tools;
+    if (this.isSubAgent) {
+      filteredTools = tools.filter(t => !t.isMutating);
+    }
+    return filteredTools.map(t => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.input_schema
+    }));
+  }
 
   /**
    * Run a single turn of the agent loop
@@ -161,7 +190,7 @@ Strict Guidelines:
           try {
             assistantMessage = await this.client.chatStream(
               payload,
-              getToolDefinitions(),
+              this.getAvailableToolDefinitions(),
               (chunk) => {
                 if (chunk.content && events.onTextChunk) {
                   events.onTextChunk(chunk.content);
@@ -222,38 +251,42 @@ Strict Guidelines:
             }
 
             if (!parsingFailed) {
-              // Check permissions if mutating
-              let approved = true;
-              if (tool.isMutating) {
-                approved = await PermissionGate.checkPermission(
-                  tool.name,
-                  toolArgs,
-                  this.rl
-                );
-              }
-
-              if (!approved) {
-                result = `Error: Permission denied by user for executing '${tool.name}'.`;
+              if (this.isSubAgent && tool.isMutating) {
+                result = `Error: Sub-agents are restricted from running mutating tools.`;
               } else {
-                try {
-                  // Run the tool execution
-                  result = await tool.run(toolArgs);
+                // Check permissions if mutating
+                let approved = true;
+                if (tool.isMutating) {
+                  approved = await PermissionGate.checkPermission(
+                    tool.name,
+                    toolArgs,
+                    this.rl
+                  );
+                }
 
-                  // Track staleness: if write_file or edit_file succeeded, invalidate earlier reads of this file
-                  if (
-                    (tool.name === "write_file" || tool.name === "edit_file") &&
-                    toolArgs.path &&
-                    !result.startsWith("Error:")
-                  ) {
-                    const invalidatedCount = this.contextManager.invalidateStaleReads(
-                      toolArgs.path
-                    );
-                    if (invalidatedCount > 0 && events.onStaleReadInvalidated) {
-                      events.onStaleReadInvalidated(toolArgs.path);
+                if (!approved) {
+                  result = `Error: Permission denied by user for executing '${tool.name}'.`;
+                } else {
+                  try {
+                    // Run the tool execution
+                    result = await tool.run(toolArgs);
+
+                    // Track staleness: if write_file or edit_file succeeded, invalidate earlier reads of this file
+                    if (
+                      (tool.name === "write_file" || tool.name === "edit_file") &&
+                      toolArgs.path &&
+                      !result.startsWith("Error:")
+                    ) {
+                      const invalidatedCount = this.contextManager.invalidateStaleReads(
+                        toolArgs.path
+                      );
+                      if (invalidatedCount > 0 && events.onStaleReadInvalidated) {
+                        events.onStaleReadInvalidated(toolArgs.path);
+                      }
                     }
+                  } catch (err: any) {
+                    result = `Error executing tool: ${err.message}`;
                   }
-                } catch (err: any) {
-                  result = `Error executing tool: ${err.message}`;
                 }
               }
             }

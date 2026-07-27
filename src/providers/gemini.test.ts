@@ -19,7 +19,8 @@ describe("GeminiClient thought_signature handling", () => {
       // Verify that the formatted message history contains thought_signature
       const assistantMsg = body.contents.find((c: any) => c.role === "model");
       expect(assistantMsg).toBeDefined();
-      expect(assistantMsg.parts).toContainEqual({ thought_signature: "test-signature-123" });
+      const hasSignature = assistantMsg.parts.some((p: any) => p.thought_signature === "test-signature-123");
+      expect(hasSignature).toBe(true);
 
       return new Response(
         JSON.stringify({

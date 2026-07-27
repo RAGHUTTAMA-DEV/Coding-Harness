@@ -12,9 +12,9 @@ if (localStorage.getItem('theme') === 'dark') {
     themeToggle.textContent = '☀️';
 }
 
-document.getElementById('todo-form').addEventListener('submit', function(e) {
+document.getElementById('shittest-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    const input = document.getElementById('todo-input');
+    const input = document.getElementById('shittest-input');
     const taskText = input.value.trim();
     if (taskText !== '') {
         addTask(taskText, false);
@@ -31,7 +31,7 @@ function addTask(text, completed) {
         <button onclick="removeTask(this)">Delete</button>
     `;
     if (completed) li.classList.add('completed');
-    document.getElementById('todo-list').appendChild(li);
+    document.getElementById('shittest-list').appendChild(li);
 }
 
 function toggleComplete(checkbox) {
@@ -50,11 +50,11 @@ function saveTasks() {
         text: li.querySelector('span').textContent,
         completed: li.classList.contains('completed')
     }));
-    localStorage.setItem('todoTasks', JSON.stringify(tasks));
+    localStorage.setItem('shittestTasks', JSON.stringify(tasks));
 }
 
 function loadTasks() {
-    const tasks = JSON.parse(localStorage.getItem('todoTasks') || '[]');
+    const tasks = JSON.parse(localStorage.getItem('shittestTasks') || '[]');
     tasks.forEach(t => addTask(t.text, t.completed));
 }
 

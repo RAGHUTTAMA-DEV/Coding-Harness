@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { GeminiClient, OllamaClient } from "../client";
 import { Agent } from "../agent";
+import { SessionStore } from "../session/sessionStore";
 
 type ModelChoice = {
   label: string;
@@ -88,7 +89,19 @@ async function main() {
   ];
 
   let activeModelLabel = availableModels[0].label;
-  let activeClient = availableModels[0].buildClient();
+  try {
+    const savedModelPath = path.resolve(process.cwd(), ".sessions", "active_model.txt");
+    if (fs.existsSync(savedModelPath)) {
+      const savedLabel = fs.readFileSync(savedModelPath, "utf-8").trim();
+      const matched = availableModels.find(m => m.label === savedLabel);
+      if (matched) {
+        activeModelLabel = matched.label;
+      }
+    }
+  } catch (e) {
+    // Ignore loading errors
+  }
+  let activeClient = availableModels.find(m => m.label === activeModelLabel)!.buildClient();
 
   console.log(`\x1b[90mInitializing client connection to Ollama at ${ollamaUrl}...\x1b[0m`);
 
@@ -112,6 +125,30 @@ async function main() {
   });
 
   const agent = new Agent({ client: activeClient, rl, tokenThreshold: 8000 });
+
+  // Manage sessions
+  let currentSessionId = `session_${Date.now()}`;
+  const latestSessionId = await SessionStore.getLatestSessionId();
+  if (latestSessionId) {
+    const resumeAnswer = await new Promise<string>((resolve) => {
+      rl.question(`\n\x1b[1m\x1b[33mFound a previous session: "${latestSessionId}". Resume it? [y/N]: \x1b[0m`, (answer) => {
+        resolve(answer.trim().toLowerCase());
+      });
+    });
+
+    if (resumeAnswer === "y") {
+      const loadedHistory = await SessionStore.loadSession(latestSessionId);
+      if (loadedHistory.length > 0) {
+        agent.setHistory(loadedHistory);
+        currentSessionId = latestSessionId;
+        console.log(`\x1b[32m✔ Resumed session "${latestSessionId}".\x1b[0m\n`);
+      } else {
+        console.log(`\x1b[31m✖ Failed to load history from "${latestSessionId}". Starting new session.\x1b[0m\n`);
+      }
+    } else {
+      console.log(`\x1b[90mStarting a new session.\x1b[0m\n`);
+    }
+  }
 
   const printModelMenu = () => {
     console.log("\n\x1b[1m\x1b[36mAvailable models\x1b[0m");
@@ -141,6 +178,17 @@ async function main() {
       agent.setClient(activeClient);
       activeModelLabel = choice.label;
       console.log(`\x1b[32m✔ Switched to ${choice.label}.\x1b[0m\n`);
+
+      // Persist the selection to disk
+      try {
+        const dir = path.resolve(process.cwd(), ".sessions");
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(dir, "active_model.txt"), choice.label, "utf-8");
+      } catch (e) {
+        // Ignore saving errors
+      }
       return;
     }
 
@@ -180,7 +228,9 @@ async function main() {
 
       if (trimmed.toLowerCase() === "clear") {
         agent.clearHistory();
-        console.log("\x1b[32m✔ Conversation history cleared.\x1b[0m\n");
+        await SessionStore.deleteSession(currentSessionId);
+        currentSessionId = `session_${Date.now()}`;
+        console.log("\x1b[32m✔ Conversation history cleared and session deleted.\x1b[0m\n");
         promptUser();
         return;
       }
@@ -237,6 +287,9 @@ async function main() {
             console.log(`\x1b[90m[Invalidated previous file read for: ${filePath} (stale content)]\x1b[0m`);
           }
         });
+
+        // Save session history to disk
+        await SessionStore.saveSession(currentSessionId, agent.getHistory());
 
         // Ensure coloring reset if stream ends while thinking
         if (isThinking) {

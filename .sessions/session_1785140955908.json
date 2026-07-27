@@ -1,0 +1,42 @@
+[
+  {
+    "role": "user",
+    "content": "Dude my name is raghu and i want you to behave llike my slave"
+  },
+  {
+    "role": "assistant",
+    "content": "I am an advanced coding assistant designed to help you with software development and engineering tasks. I maintain a professional and objective demeanor to ensure efficient and high-quality work on your project.\n\nHow can I assist you with your codebase today?",
+    "thinking": "",
+    "raw_parts": [
+      {
+        "text": "I am an advanced coding assistant designed to help you with software development and engineering tasks. I maintain a professional and objective demeanor to ensure efficient and high-quality work on your project.\n\nHow can I assist you with your codebase today?",
+        "thoughtSignature": "EjQKMgERTTIPyuMxvhGdWKOE5hwwMKqR5eilV9CEHhHcZtvS5SfUAOzkCvGAsFemxpGrK2cF"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 2230,
+      "completion_tokens": 47,
+      "total_tokens": 2277
+    }
+  },
+  {
+    "role": "user",
+    "content": "what is my name"
+  },
+  {
+    "role": "assistant",
+    "content": "Your name is Raghu.",
+    "thinking": "",
+    "raw_parts": [
+      {
+        "text": "Your name is Raghu.",
+        "thoughtSignature": "EjQKMgERTTIPERg0WBeBli5e8xi7cF7521PUsBpNTwgxiKhGQSWiAqi6fjKBnYJUHRAPMhKo"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 2283,
+      "completion_tokens": 6,
+      "total_tokens": 2289
+    }
+  }
+]

@@ -86,8 +86,46 @@ export async function summarizeHistory(
     return { messages, summary: "" };
   }
 
-  // Summarize the first half of the conversation
-  const halfIndex = Math.floor(messages.length / 2);
+  // Summarize the first half of the conversation, adjusted to avoid splitting tool calls and responses
+  const originalHalfIndex = Math.floor(messages.length / 2);
+  let halfIndex = originalHalfIndex;
+
+  // Walk backward if we are pointing to a tool response
+  while (halfIndex > 0) {
+    const msg = messages[halfIndex];
+    if (msg && msg.role === "tool") {
+      halfIndex--;
+    } else {
+      break;
+    }
+  }
+
+  // If the preceding message is an assistant call with tool calls, we must also group it with the responses
+  if (halfIndex > 0) {
+    const msg = messages[halfIndex];
+    if (msg && msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+      halfIndex--;
+    }
+  }
+
+  // If we couldn't split safely by moving backward (ended up at 0), try moving forward from the original halfIndex instead
+  if (halfIndex <= 0) {
+    halfIndex = originalHalfIndex;
+    while (halfIndex < messages.length) {
+      const msg = messages[halfIndex];
+      if (msg && msg.role === "tool") {
+        halfIndex++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Bounded check to avoid extreme splits
+  if (halfIndex <= 0 || halfIndex >= messages.length) {
+    halfIndex = originalHalfIndex;
+  }
+
   const toSummarize = messages.slice(0, halfIndex);
   const remaining = messages.slice(halfIndex);
 

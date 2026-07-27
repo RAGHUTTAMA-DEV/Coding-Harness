@@ -12,14 +12,21 @@ if (localStorage.getItem('theme') === 'dark') {
     themeToggle.textContent = '☀️';
 }
 
-document.getElementById('shittest-form').addEventListener('submit', function(e) {
+document.getElementById('shittest-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const input = document.getElementById('shittest-input');
     const taskText = input.value.trim();
     if (taskText !== '') {
-        addTask(taskText, false);
-        input.value = '';
-        saveTasks();
+        const response = await fetch('http://localhost:3000/todos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task: taskText })
+        });
+        if (response.ok) {
+            const newTodo = await response.json();
+            addTask(newTodo.task, newTodo.completed);
+            input.value = '';
+        }
     }
 });
 
@@ -35,27 +42,17 @@ function addTask(text, completed) {
 }
 
 function toggleComplete(checkbox) {
-    const li = checkbox.parentElement;
-    li.classList.toggle('completed');
-    saveTasks();
+    checkbox.parentElement.classList.toggle('completed');
 }
 
 function removeTask(button) {
     button.parentElement.remove();
-    saveTasks();
 }
 
-function saveTasks() {
-    const tasks = Array.from(document.querySelectorAll('#todo-list li')).map(li => ({
-        text: li.querySelector('span').textContent,
-        completed: li.classList.contains('completed')
-    }));
-    localStorage.setItem('shittestTasks', JSON.stringify(tasks));
-}
-
-function loadTasks() {
-    const tasks = JSON.parse(localStorage.getItem('shittestTasks') || '[]');
-    tasks.forEach(t => addTask(t.text, t.completed));
+async function loadTasks() {
+    const response = await fetch('http://localhost:3000/todos');
+    const tasks = await response.json();
+    tasks.forEach(t => addTask(t.task, t.completed));
 }
 
 window.onload = loadTasks;

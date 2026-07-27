@@ -1,9 +1,10 @@
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs/promises";
+import * as fsSync from "fs";
 import * as path from "path";
 import { computeDiff, formatDiff } from "../utils/diff";
 import { PermissionGate } from "../permissions/permissionGate";
-import { SessionStore } from "../session/sessionStore";
+import { SessionStore, Session, loadEntriesFromFile, buildSessionPath, sessionEntryToContextMessages, migrateToCurrentVersion } from "../session/sessionStore";
 import { applyEditContent } from "./edit";
 import { subAgentTool } from "./subagent";
 
@@ -85,6 +86,92 @@ describe("v4 advanced features", () => {
       expect(list.some(s => s.id === sessionId)).toBe(true);
     } finally {
       // Clean up
+      await SessionStore.deleteSession(sessionId);
+    }
+  });
+
+  test("Session tree operations, deferred flush, branching, and migration", async () => {
+    const sessionId = "test_tree_session";
+    const dir = SessionStore.getSessionsDir();
+    const filePath = path.join(dir, `${sessionId}.jsonl`);
+
+    try {
+      await SessionStore.deleteSession(sessionId);
+
+      // Create session
+      const header = {
+        version: 3,
+        sessionId,
+        cwd: process.cwd(),
+        createdAt: new Date().toISOString()
+      };
+      
+      const session = new Session(filePath, header);
+      
+      // Test deferred writing (flushed should be false initially)
+      expect(session.flushed).toBe(false);
+      expect(fsSync.existsSync(filePath)).toBe(false);
+
+      // Append user message (still deferred)
+      session.appendMessage({ role: "user", content: "Msg 1" });
+      expect(session.flushed).toBe(false);
+      expect(fsSync.existsSync(filePath)).toBe(false);
+
+      // Append assistant message (should flush now)
+      session.appendMessage({ role: "assistant", content: "Reply 1" });
+      expect(session.flushed).toBe(true);
+      expect(fsSync.existsSync(filePath)).toBe(true);
+
+      // Verify lines in JSONL file
+      const fileContent = fsSync.readFileSync(filePath, "utf8").trim().split("\n");
+      expect(fileContent.length).toBe(3); // Header + 2 entries
+      const readHeader = JSON.parse(fileContent[0]);
+      expect(readHeader.sessionId).toBe(sessionId);
+
+      // Test branching: rewind to Msg 1 and add Msg 2
+      const pathEntries = buildSessionPath(session.fileEntries, session.leafId);
+      const userMsgEntry = pathEntries[0];
+      
+      session.branch(userMsgEntry.id);
+      session.appendMessage({ role: "user", content: "Msg 2" });
+      session.appendMessage({ role: "assistant", content: "Reply 2" });
+      session.flush();
+
+      // Read from file and verify tree resolution
+      const loaded = loadEntriesFromFile(filePath);
+      const fullPath = buildSessionPath(loaded.entries, loaded.entries[loaded.entries.length - 1].id);
+      const messages = fullPath.flatMap(sessionEntryToContextMessages);
+      
+      expect(messages.length).toBe(3); // Msg 1, Msg 2, Reply 2 (Reply 1 is bypassed by branch)
+      expect(messages[0].content).toBe("Msg 1");
+      expect(messages[1].content).toBe("Msg 2");
+      expect(messages[2].content).toBe("Reply 2");
+
+      // Verify that Reply 1 is still in the loaded entries (append-only)
+      expect(loaded.entries.some(e => e.type === "message" && e.message.content === "Reply 1")).toBe(true);
+
+      // Test migrations
+      const legacyHeader = {
+        version: 1,
+        sessionId: "legacy_session",
+        cwd: process.cwd(),
+        createdAt: new Date().toISOString()
+      };
+      
+      // Legacy entries with no id/parentId and old compaction field
+      const legacyEntries: any[] = [
+        { type: "message", message: { role: "user", content: "Hello" } },
+        { type: "message", message: { role: "assistant", content: "Hi" } },
+        { type: "compaction", summary: "Summary here", firstKeptEntryIndex: 1 }
+      ];
+
+      migrateToCurrentVersion(legacyHeader as any, legacyEntries);
+      expect(legacyHeader.version).toBe(3);
+      expect(legacyEntries[0].id).toBeDefined();
+      expect(legacyEntries[1].parentId).toBe(legacyEntries[0].id);
+      expect(legacyEntries[2].firstKeptEntryId).toBe(legacyEntries[1].id);
+
+    } finally {
       await SessionStore.deleteSession(sessionId);
     }
   });

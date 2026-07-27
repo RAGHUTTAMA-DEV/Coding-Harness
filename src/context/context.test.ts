@@ -196,4 +196,32 @@ describe("Context Management Tests", () => {
     expect(history.length).toBe(3); // summary + remaining 2 messages
     expect(history[0].content).toContain("Auto summary.");
   });
+
+  test("Summarization compaction does not split tool call blocks", async () => {
+    const client = new MockOllamaClient();
+    client.mockResponse = "Summarized part.";
+
+    const messages: Message[] = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "let's do something" },
+      {
+        role: "assistant",
+        content: "calling tool",
+        tool_calls: [{ id: "t1", function: { name: "test_tool", arguments: {} } }]
+      },
+      { role: "tool", name: "test_tool", tool_call_id: "t1", content: "result part 1" },
+      { role: "tool", name: "test_tool", tool_call_id: "t1", content: "result part 2" },
+      { role: "user", content: "thanks" }
+    ];
+
+    const result = await summarizeHistory(messages, client);
+    
+    // Verify that the resulting payload has valid sequence: every tool message must be preceded by an assistant or another tool message
+    for (let i = 0; i < result.messages.length; i++) {
+      if (result.messages[i].role === "tool") {
+        const prevRole = result.messages[i - 1].role;
+        expect(prevRole === "assistant" || prevRole === "tool").toBe(true);
+      }
+    }
+  });
 });

@@ -1,4 +1,4 @@
-import { Message, OllamaClient } from "../client";
+import { ChatModelClient, Message } from "../client";
 
 /**
  * Normalizes tool arguments object to a sorted JSON string
@@ -80,7 +80,7 @@ export function microcompact(messages: Message[]): Message[] {
  */
 export async function summarizeHistory(
   messages: Message[],
-  client: OllamaClient
+  client: ChatModelClient
 ): Promise<{ messages: Message[]; summary: string }> {
   if (messages.length < 4) {
     return { messages, summary: "" };

@@ -1,16 +1,17 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Todo App</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Todo App</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="light-theme">
-  <button id="toggle-theme">Toggle Dark Mode</button>
+<body>
+    <button id="theme-toggle">🌙</button>
     <div class="container">
-        <h1>Todo List</h1>
-<button id="theme-toggle">🌙</button>
+        <h1>Task Manager</h1>
         <form id="todo-form">
-            <input type="text" id="todo-input" placeholder="Add a new task" required>
+            <input type="text" id="todo-input" placeholder="What needs to be done?" required>
             <button type="submit">Add</button>
         </form>
         <ul id="todo-list"></ul>

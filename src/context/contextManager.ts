@@ -1,9 +1,9 @@
 import * as path from "path";
-import { Message, OllamaClient } from "../client";
+import { ChatModelClient, Message } from "../client";
 import { microcompact, summarizeHistory } from "./compaction";
 
 export interface ContextManagerOptions {
-  client: OllamaClient;
+  client: ChatModelClient;
   systemPrompt: string;
   projectMemory?: string | null;
   tokenThreshold?: number;
@@ -14,7 +14,7 @@ export class ContextManager {
   private systemPrompt: string;
   private projectMemory: string | null = null;
   private tokenThreshold: number;
-  private client: OllamaClient;
+  private client: ChatModelClient;
   private totalTokens: number = 0;
 
   constructor(options: ContextManagerOptions) {
@@ -22,6 +22,13 @@ export class ContextManager {
     this.systemPrompt = options.systemPrompt;
     this.projectMemory = options.projectMemory || null;
     this.tokenThreshold = options.tokenThreshold || 8000;
+  }
+
+  /**
+   * Replaces the chat client used for summarization/compaction.
+   */
+  setClient(client: ChatModelClient) {
+    this.client = client;
   }
 
   /**

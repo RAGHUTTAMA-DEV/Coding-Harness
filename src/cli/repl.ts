@@ -1,6 +1,40 @@
 import * as readline from "readline";
-import { OllamaClient } from "../client";
+import * as fs from "fs";
+import * as path from "path";
+import { GeminiClient, OllamaClient } from "../client";
 import { Agent } from "../agent";
+
+type ModelChoice = {
+  label: string;
+  provider: "ollama" | "gemini";
+  model: string;
+  buildClient: () => OllamaClient | GeminiClient;
+};
+
+function loadEnvFile(filePath: string) {
+  if (!fs.existsSync(filePath)) {
+    return;
+  }
+
+  const contents = fs.readFileSync(filePath, "utf-8");
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (key && !process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
 
 async function main() {
   console.log("\x1b[1m\x1b[36m==================================================\x1b[0m");
@@ -8,8 +42,53 @@ async function main() {
   console.log("\x1b[90m   Claude-Code style CLI built in TypeScript (Bun)\x1b[0m");
   console.log("\x1b[1m\x1b[36m==================================================\x1b[0m");
 
-  const modelName = "qwen3:8b";
+  const modelName = "qwen3:14b";
   const ollamaUrl = "http://127.0.0.1:11434/api/chat";
+
+  loadEnvFile(path.resolve(process.cwd(), "src", ".env"));
+  loadEnvFile(path.resolve(process.cwd(), ".env"));
+
+  const availableModels: ModelChoice[] = [
+    {
+      label: `Ollama: ${modelName}`,
+      provider: "ollama",
+      model: modelName,
+      buildClient: () => new OllamaClient(ollamaUrl, modelName)
+    },
+    {
+      label: "Ollama: qwen3:8b",
+      provider: "ollama",
+      model: "qwen3:8b",
+      buildClient: () => new OllamaClient(ollamaUrl, "qwen3:8b")
+    },
+    {
+      label: "Ollama: llama3.1:8b",
+      provider: "ollama",
+      model: "llama3.1:8b",
+      buildClient: () => new OllamaClient(ollamaUrl, "llama3.1:8b")
+    },
+    {
+      label: "Gemini: gemini-1.5-flash",
+      provider: "gemini",
+      model: "gemini-1.5-flash",
+      buildClient: () => new GeminiClient({ model: "gemini-1.5-flash" })
+    },
+    {
+      label: "Gemini: gemini-1.5-pro",
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      buildClient: () => new GeminiClient({ model: "gemini-1.5-pro" })
+    },
+    {
+      label: "Gemini: gemini-3.1-flash-lite",
+      provider: "gemini",
+      model: "gemini-3.1-flash-lite",
+      buildClient: () => new GeminiClient({ model: "gemini-3.1-flash-lite" })
+    }
+  ];
+
+  let activeModelLabel = availableModels[0].label;
+  let activeClient = availableModels[0].buildClient();
 
   console.log(`\x1b[90mInitializing client connection to Ollama at ${ollamaUrl}...\x1b[0m`);
 
@@ -26,15 +105,47 @@ async function main() {
     console.log(`\x1b[90mContinuing anyway...\x1b[0m\n`);
   }
 
-  const client = new OllamaClient(ollamaUrl, modelName);
-  
   // Set up readline interface
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
   });
 
-  const agent = new Agent({ client, rl, tokenThreshold: 8000 });
+  const agent = new Agent({ client: activeClient, rl, tokenThreshold: 8000 });
+
+  const printModelMenu = () => {
+    console.log("\n\x1b[1m\x1b[36mAvailable models\x1b[0m");
+    availableModels.forEach((choice, index) => {
+      const currentMark = choice.label === activeModelLabel ? " \x1b[32m(current)\x1b[0m" : "";
+      console.log(`${index + 1}. ${choice.label}${currentMark}`);
+    });
+    console.log("\x1b[90mType a number to switch, or press Enter to keep the current model.\x1b[0m");
+  };
+
+  const selectModel = async () => {
+    printModelMenu();
+
+    const answer = await new Promise<string>((resolve) => {
+      rl.question("\x1b[1m\x1b[35mmodel selection>\x1b[0m ", (value) => resolve(value.trim()));
+    });
+
+    if (answer === "") {
+      console.log(`\x1b[90mKeeping ${activeModelLabel}.\x1b[0m\n`);
+      return;
+    }
+
+    const selectedIndex = Number.parseInt(answer, 10);
+    if (!Number.isNaN(selectedIndex) && selectedIndex >= 1 && selectedIndex <= availableModels.length) {
+      const choice = availableModels[selectedIndex - 1];
+      activeClient = choice.buildClient();
+      agent.setClient(activeClient);
+      activeModelLabel = choice.label;
+      console.log(`\x1b[32m✔ Switched to ${choice.label}.\x1b[0m\n`);
+      return;
+    }
+
+    console.log("\x1b[33mInvalid selection. Use /models again and choose a listed number.\x1b[0m\n");
+  };
 
   // Handle Ctrl+C (SIGINT) to steer the agent during execution
   rl.on("SIGINT", () => {
@@ -54,8 +165,8 @@ async function main() {
     }
   });
 
-  console.log(`\x1b[90mUsing model: \x1b[36m${modelName}\x1b[0m`);
-  console.log(`\x1b[90mType \x1b[33m'exit'\x1b[90m or \x1b[33m'quit'\x1b[90m to close, and \x1b[33m'clear'\x1b[90m to reset conversation history.\x1b[0m\n`);
+  console.log(`\x1b[90mUsing model: \x1b[36m${activeModelLabel}\x1b[0m`);
+  console.log(`\x1b[90mType \x1b[33m'exit'\x1b[90m or \x1b[33m'quit'\x1b[90m to close, \x1b[33m'clear'\x1b[90m to reset conversation history, and \x1b[33m'/models'\x1b[90m to switch models.\x1b[0m\n`);
 
   const promptUser = () => {
     rl.question("\x1b[1m\x1b[35mantigravity>\x1b[0m ", async (input) => {
@@ -70,6 +181,16 @@ async function main() {
       if (trimmed.toLowerCase() === "clear") {
         agent.clearHistory();
         console.log("\x1b[32m✔ Conversation history cleared.\x1b[0m\n");
+        promptUser();
+        return;
+      }
+
+      if (trimmed.toLowerCase() === "/models") {
+        try {
+          await selectModel();
+        } catch (error: any) {
+          console.error(`\n\x1b[31m✖ Could not switch models: ${error.message}\x1b[0m\n`);
+        }
         promptUser();
         return;
       }

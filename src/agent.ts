@@ -1,7 +1,7 @@
 import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
-import { Message, OllamaClient, ToolCall } from "./client";
+import { ChatModelClient, Message, ToolCall } from "./client";
 import { getToolByName, getToolDefinitions } from "./tools";
 import { PermissionGate } from "./permissions/permissionGate";
 import { ContextManager } from "./context/contextManager";
@@ -16,7 +16,7 @@ export interface AgentEvents {
 }
 
 export class Agent {
-  private client: OllamaClient;
+  private client: ChatModelClient;
   private contextManager: ContextManager;
   private rl?: readline.Interface;
   private systemPrompt: string;
@@ -24,7 +24,7 @@ export class Agent {
   public isRunning: boolean = false;
 
   constructor(options: {
-    client: OllamaClient;
+    client: ChatModelClient;
     rl?: readline.Interface;
     systemPrompt?: string;
     tokenThreshold?: number;
@@ -77,6 +77,14 @@ Strict Guidelines:
       projectMemory,
       tokenThreshold: options.tokenThreshold
     });
+  }
+
+  /**
+   * Swap the active model client while preserving the current conversation history.
+   */
+  setClient(client: ChatModelClient) {
+    this.client = client;
+    this.contextManager.setClient(client);
   }
 
   /**
@@ -169,7 +177,7 @@ Strict Guidelines:
             if (attempt >= maxRetries) {
               throw err;
             }
-            console.log(`\n\x1b[33m⚠️  Ollama client error (attempt ${attempt}/${maxRetries}): ${err.message}. Retrying in 2s...\x1b[0m`);
+            console.log(`\n\x1b[33m⚠️  Model client error (attempt ${attempt}/${maxRetries}): ${err.message}. Retrying in 2s...\x1b[0m`);
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }

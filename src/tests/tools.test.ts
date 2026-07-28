@@ -1,12 +1,11 @@
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { readTool } from "./read";
-import { writeTool } from "./write";
-import { editTool } from "./edit";
-import { checkSyntaxTool } from "./checkSyntax";
-import { todoReadTool, todoWriteTool } from "./todo";
-
+import { readTool } from "../tools/read";
+import { writeTool } from "../tools/write";
+import { editTool } from "../tools/edit";
+import { checkSyntaxTool } from "../tools/checkSyntax";
+import { todoReadTool, todoWriteTool } from "../tools/todo";
 
 const testFilePath = path.resolve("./test_temp_file.txt");
 

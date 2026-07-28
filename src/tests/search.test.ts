@@ -1,8 +1,8 @@
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { globTool } from "./glob";
-import { grepTool } from "./grep";
+import { globTool } from "../tools/glob";
+import { grepTool } from "../tools/grep";
 
 const testDir = path.resolve("./test_search_dir");
 const file1 = path.join(testDir, "file1.txt");

@@ -1,6 +1,6 @@
 import { expect, test, describe, afterEach } from "bun:test";
-import { GeminiClient } from "./gemini";
-import { Message } from "./types";
+import { GeminiClient } from "../providers/gemini";
+import { Message } from "../providers/types";
 
 describe("GeminiClient thought_signature handling", () => {
   const originalFetch = global.fetch;

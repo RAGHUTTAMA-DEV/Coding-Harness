@@ -5,8 +5,8 @@ import * as path from "path";
 import { computeDiff, formatDiff } from "../utils/diff";
 import { PermissionGate } from "../permissions/permissionGate";
 import { SessionStore, Session, loadEntriesFromFile, buildSessionPath, sessionEntryToContextMessages, migrateToCurrentVersion } from "../session/sessionStore";
-import { applyEditContent } from "./edit";
-import { subAgentTool } from "./subagent";
+import { applyEditContent } from "../tools/edit";
+import { subAgentTool } from "../tools/subagent";
 
 describe("v4 advanced features", () => {
   // --- 1. Diff Utility Tests ---

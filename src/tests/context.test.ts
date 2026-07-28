@@ -1,7 +1,7 @@
 import { expect, test, describe } from "bun:test";
-import { ContextManager } from "./contextManager";
+import { ContextManager } from "../context/contextManager";
 import { Message, OllamaClient } from "../client";
-import { microcompact, summarizeHistory } from "./compaction";
+import { microcompact, summarizeHistory } from "../context/compaction";
 
 class MockOllamaClient extends OllamaClient {
   public mockResponse: string = "This is a summary of the conversation.";

@@ -23,6 +23,7 @@ export class Agent {
   public isInterrupted: boolean = false;
   public isRunning: boolean = false;
   private isSubAgent: boolean = false;
+  private toolExecutionMode: "sequential" | "parallel";
 
   constructor(options: {
     client: ChatModelClient;
@@ -30,16 +31,18 @@ export class Agent {
     systemPrompt?: string;
     tokenThreshold?: number;
     isSubAgent?: boolean;
+    toolExecutionMode?: "sequential" | "parallel";
   }) {
     this.client = options.client;
     this.rl = options.rl;
     this.isSubAgent = options.isSubAgent || false;
+    this.toolExecutionMode = options.toolExecutionMode || "parallel";
 
     // Track active client in tool registry
     setActiveClient(this.client);
     
     // Set a solid default system prompt if none is provided
-    this.systemPrompt = options.systemPrompt || `You are an advanced agentic coding assistant called Antigravity.
+    this.systemPrompt = options.systemPrompt || `You are an advanced agentic coding assistant called Coding-Harness.
 You are running on the user's host machine.
 Current Working Directory: ${process.cwd()}
 Platform: ${process.platform}
@@ -92,6 +95,14 @@ Strict Guidelines:
     this.client = client;
     this.contextManager.setClient(client);
     setActiveClient(client);
+  }
+
+  getToolExecutionMode(): "sequential" | "parallel" {
+    return this.toolExecutionMode;
+  }
+
+  setToolExecutionMode(mode: "sequential" | "parallel") {
+    this.toolExecutionMode = mode;
   }
 
   /**
@@ -178,11 +189,9 @@ Strict Guidelines:
             }
           }
         }
-
-        // Build the message payload from context manager
         const payload = this.contextManager.getPayload();
 
-        // Stream the response from the LLM (with retry-on-network-failure)
+        // Stream the response from the LLM 
         let assistantMessage;
         const maxRetries = 3;
         let attempt = 0;
@@ -215,7 +224,6 @@ Strict Guidelines:
           throw new Error("Failed to retrieve completion from Ollama client.");
         }
 
-        // Append assistant message to local history and update tokens
         this.contextManager.addMessage(assistantMessage);
         this.contextManager.updateTokens(assistantMessage);
         finalAssistantText = assistantMessage.content;
@@ -228,81 +236,193 @@ Strict Guidelines:
         }
 
         // Execute all tool calls
-        for (const toolCall of toolCalls) {
-          if (events.onToolCall) {
-            events.onToolCall(toolCall);
+        if (this.toolExecutionMode === "sequential") {
+          for (const toolCall of toolCalls) {
+            if (events.onToolCall) {
+              events.onToolCall(toolCall);
+            }
+
+            const tool = getToolByName(toolCall.function.name);
+            let result = "";
+
+            if (!tool) {
+              result = `Error: Tool '${toolCall.function.name}' not found in registry.`;
+            } else {
+              let toolArgs = toolCall.function.arguments;
+              let parsingFailed = false;
+              if (typeof toolArgs === "string" && toolArgs.trim() !== "") {
+                try {
+                  toolArgs = JSON.parse(toolArgs);
+                } catch (err: any) {
+                  result = `Error: Failed to parse tool arguments for '${tool.name}' as valid JSON. Raw arguments: ${toolCall.function.arguments}. Details: ${err.message}. Please retry with valid JSON arguments.`;
+                  parsingFailed = true;
+                }
+              }
+
+              if (!parsingFailed) {
+                if (this.isSubAgent && tool.isMutating) {
+                  result = `Error: Sub-agents are restricted from running mutating tools.`;
+                } else {
+                  // Check permissions if mutating
+                  let approved = true;
+                  if (tool.isMutating) {
+                    approved = await PermissionGate.checkPermission(
+                      tool.name,
+                      toolArgs,
+                      this.rl
+                    );
+                  }
+
+                  if (!approved) {
+                    result = `Error: Permission denied by user for executing '${tool.name}'.`;
+                  } else {
+                    try {
+                      result = await tool.run(toolArgs);
+                      if (
+                        (tool.name === "write_file" || tool.name === "edit_file") &&
+                        toolArgs.path &&
+                        !result.startsWith("Error:")
+                      ) {
+                        const invalidatedCount = this.contextManager.invalidateStaleReads(
+                          toolArgs.path
+                        );
+                        if (invalidatedCount > 0 && events.onStaleReadInvalidated) {
+                          events.onStaleReadInvalidated(toolArgs.path);
+                        }
+                      }
+                    } catch (err: any) {
+                      result = `Error executing tool: ${err.message}`;
+                    }
+                  }
+                }
+              }
+            }
+
+            if (events.onToolResult) {
+              events.onToolResult(toolCall, result);
+            }
+
+            // Append the tool result back into history
+            this.contextManager.addMessage({
+              role: "tool",
+              name: toolCall.function.name,
+              tool_call_id: toolCall.id,
+              content: result
+            });
           }
+        } else {
+          // Parallel logic
+          // 1. Prepare and check permissions sequentially (to avoid interleaved prompts)
+          const preparedCalls = [];
+          for (const toolCall of toolCalls) {
+            if (events.onToolCall) {
+              events.onToolCall(toolCall);
+            }
 
-          const tool = getToolByName(toolCall.function.name);
-          let result = "";
+            const tool = getToolByName(toolCall.function.name);
+            if (!tool) {
+              preparedCalls.push({
+                toolCall,
+                errorResult: `Error: Tool '${toolCall.function.name}' not found in registry.`
+              });
+              continue;
+            }
 
-          if (!tool) {
-            result = `Error: Tool '${toolCall.function.name}' not found in registry.`;
-          } else {
             let toolArgs = toolCall.function.arguments;
             let parsingFailed = false;
             if (typeof toolArgs === "string" && toolArgs.trim() !== "") {
               try {
                 toolArgs = JSON.parse(toolArgs);
               } catch (err: any) {
-                result = `Error: Failed to parse tool arguments for '${tool.name}' as valid JSON. Raw arguments: ${toolCall.function.arguments}. Details: ${err.message}. Please retry with valid JSON arguments.`;
+                preparedCalls.push({
+                  toolCall,
+                  errorResult: `Error: Failed to parse tool arguments for '${tool.name}' as valid JSON. Raw arguments: ${toolCall.function.arguments}. Details: ${err.message}. Please retry with valid JSON arguments.`
+                });
                 parsingFailed = true;
               }
             }
 
-            if (!parsingFailed) {
-              if (this.isSubAgent && tool.isMutating) {
-                result = `Error: Sub-agents are restricted from running mutating tools.`;
-              } else {
-                // Check permissions if mutating
-                let approved = true;
-                if (tool.isMutating) {
-                  approved = await PermissionGate.checkPermission(
-                    tool.name,
-                    toolArgs,
-                    this.rl
+            if (parsingFailed) {
+              continue;
+            }
+
+            if (this.isSubAgent && tool.isMutating) {
+              preparedCalls.push({
+                toolCall,
+                errorResult: `Error: Sub-agents are restricted from running mutating tools.`
+              });
+              continue;
+            }
+
+            // Check permissions sequentially
+            let approved = true;
+            if (tool.isMutating) {
+              approved = await PermissionGate.checkPermission(
+                tool.name,
+                toolArgs,
+                this.rl
+              );
+            }
+
+            if (!approved) {
+              preparedCalls.push({
+                toolCall,
+                errorResult: `Error: Permission denied by user for executing '${tool.name}'.`
+              });
+              continue;
+            }
+
+            // Approved and ready to run
+            preparedCalls.push({
+              toolCall,
+              tool,
+              toolArgs
+            });
+          }
+
+          // 2. Run approved tools in parallel
+          const results = await Promise.all(
+            preparedCalls.map(async (item) => {
+              if (item.errorResult !== undefined) {
+                return { toolCall: item.toolCall, result: item.errorResult };
+              }
+
+              const { toolCall, tool, toolArgs } = item;
+              let result = "";
+              try {
+                result = await tool.run(toolArgs);
+                if (
+                  (tool.name === "write_file" || tool.name === "edit_file") &&
+                  toolArgs.path &&
+                  !result.startsWith("Error:")
+                ) {
+                  const invalidatedCount = this.contextManager.invalidateStaleReads(
+                    toolArgs.path
                   );
-                }
-
-                if (!approved) {
-                  result = `Error: Permission denied by user for executing '${tool.name}'.`;
-                } else {
-                  try {
-                    // Run the tool execution
-                    result = await tool.run(toolArgs);
-
-                    // Track staleness: if write_file or edit_file succeeded, invalidate earlier reads of this file
-                    if (
-                      (tool.name === "write_file" || tool.name === "edit_file") &&
-                      toolArgs.path &&
-                      !result.startsWith("Error:")
-                    ) {
-                      const invalidatedCount = this.contextManager.invalidateStaleReads(
-                        toolArgs.path
-                      );
-                      if (invalidatedCount > 0 && events.onStaleReadInvalidated) {
-                        events.onStaleReadInvalidated(toolArgs.path);
-                      }
-                    }
-                  } catch (err: any) {
-                    result = `Error executing tool: ${err.message}`;
+                  if (invalidatedCount > 0 && events.onStaleReadInvalidated) {
+                    events.onStaleReadInvalidated(toolArgs.path);
                   }
                 }
+              } catch (err: any) {
+                result = `Error executing tool: ${err.message}`;
               }
+
+              return { toolCall, result };
+            })
+          );
+
+          // 3. Process results sequentially (callbacks and adding messages in original order)
+          for (const item of results) {
+            if (events.onToolResult) {
+              events.onToolResult(item.toolCall, item.result);
             }
+            this.contextManager.addMessage({
+              role: "tool",
+              name: item.toolCall.function.name,
+              tool_call_id: item.toolCall.id,
+              content: item.result
+            });
           }
-
-          if (events.onToolResult) {
-            events.onToolResult(toolCall, result);
-          }
-
-          // Append the tool result back into history
-          this.contextManager.addMessage({
-            role: "tool",
-            name: toolCall.function.name,
-            tool_call_id: toolCall.id,
-            content: result
-          });
         }
       }
 

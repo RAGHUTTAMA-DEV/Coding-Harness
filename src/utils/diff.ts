@@ -7,7 +7,6 @@ export interface DiffHunk {
  * Computes a line-by-line diff between two strings using the Longest Common Subsequence (LCS) algorithm.
  */
 export function computeDiff(oldStr: string, newStr: string): DiffHunk[] {
-  // Normalize line endings to LF for diff computation
   const oldLines = oldStr === "" ? [] : oldStr.split(/\r?\n/);
   const newLines = newStr === "" ? [] : newStr.split(/\r?\n/);
 
@@ -58,13 +57,11 @@ export function formatDiff(diff: DiffHunk[], contextSize = 3): string {
     return "No changes detected.";
   }
 
-  // Identify which lines should be printed (changes + their context windows)
   const n = diff.length;
   const printFlags = new Array<boolean>(n).fill(false);
 
   for (let i = 0; i < n; i++) {
     if (diff[i].type !== "unchanged") {
-      // Mark this index and surrounding context indices to be printed
       const start = Math.max(0, i - contextSize);
       const end = Math.min(n - 1, i + contextSize);
       for (let k = start; k <= end; k++) {
@@ -100,7 +97,7 @@ export function formatDiff(diff: DiffHunk[], contextSize = 3): string {
           skipped++;
           i++;
         }
-        i--; // offset the loop increment
+        i--; 
         output += `\x1b[90m... [${skipped} lines unchanged] ...\x1b[0m\n`;
         inHunk = false;
       }

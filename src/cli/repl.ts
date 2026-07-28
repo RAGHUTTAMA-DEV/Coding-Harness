@@ -214,7 +214,7 @@ async function main() {
   });
 
   console.log(`\x1b[90mUsing model: \x1b[36m${activeModelLabel}\x1b[0m`);
-  console.log(`\x1b[90mType \x1b[33m'exit'\x1b[90m or \x1b[33m'quit'\x1b[90m to close, \x1b[33m'clear'\x1b[90m to reset conversation history, and \x1b[33m'/models'\x1b[90m to switch models.\x1b[0m\n`);
+  console.log(`\x1b[90mType \x1b[33m'exit'\x1b[90m or \x1b[33m'quit'\x1b[90m to close, \x1b[33m'clear'\x1b[90m to reset conversation history, \x1b[33m'/models'\x1b[90m to switch models, and \x1b[33m'/mode'\x1b[90m to toggle execution mode (parallel/sequential).\x1b[0m\n`);
 
   const promptUser = () => {
     rl.question("\x1b[1m\x1b[35mantigravity>\x1b[0m ", async (input) => {
@@ -241,6 +241,15 @@ async function main() {
         } catch (error: any) {
           console.error(`\n\x1b[31m✖ Could not switch models: ${error.message}\x1b[0m\n`);
         }
+        promptUser();
+        return;
+      }
+
+      if (trimmed.toLowerCase() === "/mode") {
+        const currentMode = agent.getToolExecutionMode();
+        const nextMode = currentMode === "parallel" ? "sequential" : "parallel";
+        agent.setToolExecutionMode(nextMode);
+        console.log(`\x1b[32m✔ Switched tool execution mode to: \x1b[1m\x1b[36m${nextMode}\x1b[0m\n`);
         promptUser();
         return;
       }
@@ -297,10 +306,11 @@ async function main() {
         }
         console.log("\n");
         
-        // Print token statistics
+        // Print token statistics and execution mode
         const totalTokens = agent.getTotalTokens();
         const threshold = agent.getTokenThreshold();
-        console.log(`\x1b[90mSession Tokens: \x1b[36m${totalTokens}\x1b[90m / \x1b[33m${threshold}\x1b[0m\n`);
+        const mode = agent.getToolExecutionMode();
+        console.log(`\x1b[90mSession Tokens: \x1b[36m${totalTokens}\x1b[90m / \x1b[33m${threshold}\x1b[90m | Mode: \x1b[36m${mode}\x1b[0m\n`);
       } catch (error: any) {
         console.error(`\n\x1b[31m✖ Error running agent: ${error.message}\x1b[0m\n`);
       }

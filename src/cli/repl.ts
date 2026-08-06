@@ -12,6 +12,95 @@ type ModelChoice = {
   buildClient: () => OllamaClient | GeminiClient;
 };
 
+async function interactiveSelect(
+  rl: readline.Interface,
+  options: { label: string; current: boolean }[],
+  title: string
+): Promise<number> {
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+
+  const wasRaw = stdin.isRaw;
+  
+  // Save and temporarily disable SIGINT listeners on rl to prevent exiting the process on Ctrl+C
+  const sigintListeners = rl.listeners("SIGINT");
+  rl.removeAllListeners("SIGINT");
+
+  rl.pause();
+  stdin.resume();
+
+  if (stdin.setRawMode) {
+    stdin.setRawMode(true);
+  }
+  readline.emitKeypressEvents(stdin);
+
+  let currentIndex = options.findIndex(o => o.current);
+  if (currentIndex === -1) currentIndex = 0;
+
+  const render = () => {
+    // Hide cursor
+    stdout.write("\x1B[?25l");
+    stdout.write(`\r\n  \x1b[1m\x1b[36m${title}\x1b[0m\r\n`);
+    options.forEach((opt, idx) => {
+      const isSelected = idx === currentIndex;
+      const isCurrentMark = opt.current ? " \x1b[32m(current)\x1b[0m" : "";
+      if (isSelected) {
+        stdout.write(`  \x1b[1m\x1b[38;5;45m➔ ${opt.label}${isCurrentMark}\x1b[0m\r\n`);
+      } else {
+        stdout.write(`    \x1b[90m${opt.label}${isCurrentMark}\x1b[0m\r\n`);
+      }
+    });
+    stdout.write(`\x1B[${options.length + 2}A`);
+  };
+
+  render();
+
+  return new Promise<number>((resolve) => {
+    const onKeypress = (str: string, key: any) => {
+      if (!key) return;
+
+      if (key.name === "up" || key.name === "k") {
+        currentIndex = (currentIndex - 1 + options.length) % options.length;
+        render();
+      } else if (key.name === "down" || key.name === "j") {
+        currentIndex = (currentIndex + 1) % options.length;
+        render();
+      } else if (key.name === "return" || key.name === "enter") {
+        cleanup();
+        stdout.write("\x1B[?25h");
+        stdout.write("\r");
+        for (let i = 0; i < options.length + 2; i++) {
+          stdout.write("\x1B[2K\r\n");
+        }
+        stdout.write(`\x1B[${options.length + 2}A`);
+        resolve(currentIndex);
+      } else if (key.name === "escape" || (key.ctrl && key.name === "c")) {
+        cleanup();
+        stdout.write("\x1B[?25h");
+        stdout.write("\r");
+        for (let i = 0; i < options.length + 2; i++) {
+          stdout.write("\x1B[2K\r\n");
+        }
+        stdout.write(`\x1B[${options.length + 2}A`);
+        resolve(-1);
+      }
+    };
+
+    const cleanup = () => {
+      stdin.removeListener("keypress", onKeypress);
+      if (stdin.setRawMode) {
+        stdin.setRawMode(wasRaw);
+      }
+      rl.resume();
+      // Restore SIGINT listeners
+      sigintListeners.forEach(listener => rl.on("SIGINT", listener as any));
+    };
+
+    stdin.on("keypress", onKeypress);
+  });
+}
+
+
 function loadEnvFile(filePath: string) {
   if (!fs.existsSync(filePath)) {
     return;
@@ -38,10 +127,10 @@ function loadEnvFile(filePath: string) {
 }
 
 async function main() {
-  console.log("\x1b[1m\x1b[36m==================================================\x1b[0m");
-  console.log("\x1b[1m\x1b[36m   🛸 Antigravity Agent Harness (v1)            \x1b[0m");
-  console.log("\x1b[90m   Claude-Code style CLI built in TypeScript (Bun)\x1b[0m");
-  console.log("\x1b[1m\x1b[36m==================================================\x1b[0m");
+  console.log("\n\x1b[38;5;99m┌────────────────────────────────────────────────────────┐\x1b[0m");
+  console.log("\x1b[38;5;99m│\x1b[0m   \x1b[1m\x1b[38;5;45m🛸 ANTIGRAVITY AGENT HARNESS (v1.2)\x1b[0m                 \x1b[38;5;99m│\x1b[0m");
+  console.log("\x1b[38;5;99m│\x1b[0m   \x1b[90mThe Premium, Zero-Dependency Autonomous Coding CLI\x1b[0m   \x1b[38;5;99m│\x1b[0m");
+  console.log("\x1b[38;5;99m└────────────────────────────────────────────────────────┘\x1b[0m");
 
   const modelName = "qwen3:14b";
   const ollamaUrl = "http://127.0.0.1:11434/api/chat";
@@ -150,49 +239,35 @@ async function main() {
     }
   }
 
-  const printModelMenu = () => {
-    console.log("\n\x1b[1m\x1b[36mAvailable models\x1b[0m");
-    availableModels.forEach((choice, index) => {
-      const currentMark = choice.label === activeModelLabel ? " \x1b[32m(current)\x1b[0m" : "";
-      console.log(`${index + 1}. ${choice.label}${currentMark}`);
-    });
-    console.log("\x1b[90mType a number to switch, or press Enter to keep the current model.\x1b[0m");
-  };
-
   const selectModel = async () => {
-    printModelMenu();
+    const options = availableModels.map(m => ({
+      label: m.label,
+      current: m.label === activeModelLabel
+    }));
 
-    const answer = await new Promise<string>((resolve) => {
-      rl.question("\x1b[1m\x1b[35mmodel selection>\x1b[0m ", (value) => resolve(value.trim()));
-    });
+    const selectedIndex = await interactiveSelect(rl, options, "Select LLM Model / Provider:");
 
-    if (answer === "") {
+    if (selectedIndex === -1) {
       console.log(`\x1b[90mKeeping ${activeModelLabel}.\x1b[0m\n`);
       return;
     }
 
-    const selectedIndex = Number.parseInt(answer, 10);
-    if (!Number.isNaN(selectedIndex) && selectedIndex >= 1 && selectedIndex <= availableModels.length) {
-      const choice = availableModels[selectedIndex - 1];
-      activeClient = choice.buildClient();
-      agent.setClient(activeClient);
-      activeModelLabel = choice.label;
-      console.log(`\x1b[32m✔ Switched to ${choice.label}.\x1b[0m\n`);
+    const choice = availableModels[selectedIndex];
+    activeClient = choice.buildClient();
+    agent.setClient(activeClient);
+    activeModelLabel = choice.label;
+    console.log(`\x1b[32m✔ Switched to ${choice.label}.\x1b[0m\n`);
 
-      // Persist the selection to disk
-      try {
-        const dir = path.resolve(process.cwd(), ".sessions");
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-        fs.writeFileSync(path.join(dir, "active_model.txt"), choice.label, "utf-8");
-      } catch (e) {
-        // Ignore saving errors
+    // Persist the selection to disk
+    try {
+      const dir = path.resolve(process.cwd(), ".sessions");
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
-      return;
+      fs.writeFileSync(path.join(dir, "active_model.txt"), choice.label, "utf-8");
+    } catch (e) {
+      // Ignore saving errors
     }
-
-    console.log("\x1b[33mInvalid selection. Use /models again and choose a listed number.\x1b[0m\n");
   };
 
   // Handle Ctrl+C (SIGINT) to steer the agent during execution
@@ -213,11 +288,15 @@ async function main() {
     }
   });
 
-  console.log(`\x1b[90mUsing model: \x1b[36m${activeModelLabel}\x1b[0m`);
-  console.log(`\x1b[90mType \x1b[33m'exit'\x1b[90m or \x1b[33m'quit'\x1b[90m to close, \x1b[33m'clear'\x1b[90m to reset conversation history, \x1b[33m'/models'\x1b[90m to switch models, and \x1b[33m'/mode'\x1b[90m to toggle execution mode (parallel/sequential).\x1b[0m\n`);
+  console.log(`\x1b[38;5;244m🤖 Active Model: \x1b[38;5;45m\x1b[1m${activeModelLabel}\x1b[0m`);
+  console.log(`\x1b[90mCommands:\x1b[0m`);
+  console.log(`  \x1b[38;5;99m/models\x1b[0m \x1b[90m- Switch LLM models interactively\x1b[0m`);
+  console.log(`  \x1b[38;5;99m/mode\x1b[0m   \x1b[90m- Toggle tool execution mode (parallel/sequential)\x1b[0m`);
+  console.log(`  \x1b[38;5;99mclear\x1b[0m   \x1b[90m- Reset conversation history and session\x1b[0m`);
+  console.log(`  \x1b[38;5;99mexit\x1b[0m    \x1b[90m- Exit the session\x1b[0m\n`);
 
   const promptUser = () => {
-    rl.question("\x1b[1m\x1b[35mantigravity>\x1b[0m ", async (input) => {
+    rl.question("\x1b[1m\x1b[38;5;99m⚡ antigravity\x1b[0m \x1b[90m❯\x1b[0m ", async (input) => {
       const trimmed = input.trim();
 
       if (trimmed.toLowerCase() === "exit" || trimmed.toLowerCase() === "quit") {
@@ -265,35 +344,48 @@ async function main() {
         await agent.run(trimmed, {
           onThinkingChunk: (chunk) => {
             if (!isThinking) {
-              process.stdout.write("\n\x1b[90m[Thinking...]\n");
+              process.stdout.write("\n\x1b[90m│ 💭 \x1b[3mThinking...\x1b[0m\r\n");
               isThinking = true;
             }
-            process.stdout.write(chunk);
+            const formatted = chunk.replace(/\n/g, "\r\n\x1b[90m│ \x1b[3m");
+            process.stdout.write(`\x1b[90m\x1b[3m${formatted}\x1b[0m`);
           },
           onTextChunk: (chunk) => {
             if (isThinking) {
-              process.stdout.write("\x1b[0m\n\n");
+              process.stdout.write("\x1b[0m\r\n\r\n");
               isThinking = false;
             }
             process.stdout.write(chunk);
           },
           onToolCall: (toolCall) => {
             if (isThinking) {
-              process.stdout.write("\x1b[0m\n\n");
+              process.stdout.write("\x1b[0m\r\n\r\n");
               isThinking = false;
             }
-            console.log(`\n\x1b[36m⚙️  Calling tool: \x1b[1m${toolCall.function.name}\x1b[0m...`);
+            let summary = "";
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              if (args.CommandLine) {
+                summary = ` \x1b[90m(${args.CommandLine})\x1b[0m`;
+              } else if (args.TargetFile || args.AbsolutePath) {
+                const p = args.TargetFile || args.AbsolutePath;
+                summary = ` \x1b[90m(${path.basename(p)})\x1b[0m`;
+              } else if (args.query) {
+                summary = ` \x1b[90m("${args.query}")\x1b[0m`;
+              }
+            } catch (e) {}
+            console.log(`\x1b[38;5;208m🔸 [Tool Call]\x1b[0m \x1b[1m${toolCall.function.name}\x1b[0m${summary}`);
           },
           onToolResult: (toolCall, result) => {
-            console.log(`\x1b[32m✔ Tool '${toolCall.function.name}' returned ${result.length} characters.\x1b[0m`);
+            console.log(`\x1b[38;5;121m🔹 [Tool Success]\x1b[0m \x1b[90mReturned ${result.length} characters\x1b[0m\n`);
           },
           onCompaction: (summary) => {
-            console.log(`\n\x1b[1m\x1b[33m📦 Context Compaction Triggered!\x1b[0m`);
-            console.log(`\x1b[90mThe older conversation history has been folded into a single summary block to stay within context constraints:\x1b[0m`);
+            console.log(`\n\x1b[1m\x1b[33m📦 [Context Compaction]\x1b[0m`);
+            console.log(`\x1b[90mOlder conversation history folded into a summary block:\x1b[0m`);
             console.log(`\x1b[33m${summary}\x1b[0m\n`);
           },
           onStaleReadInvalidated: (filePath) => {
-            console.log(`\x1b[90m[Invalidated previous file read for: ${filePath} (stale content)]\x1b[0m`);
+            console.log(`\x1b[90m[Invalidated previous file read: ${path.basename(filePath)} (stale content)]\x1b[0m`);
           }
         });
 
@@ -306,11 +398,19 @@ async function main() {
         }
         console.log("\n");
         
-        // Print token statistics and execution mode
+        // Print token statistics and execution mode dashboard
         const totalTokens = agent.getTotalTokens();
         const threshold = agent.getTokenThreshold();
         const mode = agent.getToolExecutionMode();
-        console.log(`\x1b[90mSession Tokens: \x1b[36m${totalTokens}\x1b[90m / \x1b[33m${threshold}\x1b[90m | Mode: \x1b[36m${mode}\x1b[0m\n`);
+        const pct = Math.min(100, Math.round((totalTokens / threshold) * 100));
+        const tokenBar = `Tokens: ${totalTokens}/${threshold} (${pct}%)`;
+        const modeBadge = `Mode: ${mode.toUpperCase()}`;
+        const sessionBadge = `Session: ${currentSessionId}`;
+        
+        const width = Math.max(40, Math.min(80, (process.stdout.columns || 60) - 2));
+        console.log(`\x1b[90m${"─".repeat(width)}\x1b[0m`);
+        console.log(`\x1b[38;5;244m📊 ${sessionBadge}  │  ${tokenBar}  │  ${modeBadge}\x1b[0m`);
+        console.log(`\x1b[90m${"─".repeat(width)}\x1b[0m\n`);
       } catch (error: any) {
         console.error(`\n\x1b[31m✖ Error running agent: ${error.message}\x1b[0m\n`);
       }

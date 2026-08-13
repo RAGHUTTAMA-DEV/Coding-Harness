@@ -31,8 +31,29 @@ export class PermissionGate {
   static async checkPermission(
     toolName: string,
     args: any,
-    rl?: readline.Interface
+    rl?: readline.Interface,
+    autoConfirm?: boolean
   ): Promise<boolean> {
+    if (autoConfirm) {
+      if (toolName === "run_command") {
+        const command = (args.command || "").trim();
+
+        // Check dangerous commands
+        for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
+          if (pattern.test(command)) {
+            console.error(`\n\x1b[1m\x1b[31m✖ Policy Violation: Command blocked by policy engine.\x1b[0m`);
+            console.error(`Blocked Command: \x1b[31m${command}\x1b[0m\n`);
+            return false;
+          }
+        }
+
+        // Auto-approve all other commands
+        console.error(`\n\x1b[1m\x1b[32m✔ Policy Auto-Approve: Command allowed by policy engine.\x1b[0m`);
+        console.error(`Running Command: \x1b[32m${command}\x1b[0m\n`);
+      }
+      return true;
+    }
+
     // 1. Policy Engine check for command execution
     if (toolName === "run_command") {
       const command = (args.command || "").trim();

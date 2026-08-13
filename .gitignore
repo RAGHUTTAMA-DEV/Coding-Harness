@@ -1,5 +1,7 @@
 # Dependency directories
 node_modules/
+html/
+guide.md
 
 # Build and distribution directories
 dist/

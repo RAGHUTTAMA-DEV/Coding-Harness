@@ -128,7 +128,7 @@ function loadEnvFile(filePath: string) {
 
 async function main() {
   console.log("\n\x1b[38;5;99m┌────────────────────────────────────────────────────────┐\x1b[0m");
-  console.log("\x1b[38;5;99m│\x1b[0m   \x1b[1m\x1b[38;5;45m🛸 ANTIGRAVITY AGENT HARNESS (v1.2)\x1b[0m                 \x1b[38;5;99m│\x1b[0m");
+  console.log("\x1b[38;5;99m│\x1b[0m   \x1b[1m\x1b[38;5;45m🛸 CODING-HARNESS (v1.2)\x1b[0m                 \x1b[38;5;99m│\x1b[0m");
   console.log("\x1b[38;5;99m│\x1b[0m   \x1b[90mThe Premium, Zero-Dependency Autonomous Coding CLI\x1b[0m   \x1b[38;5;99m│\x1b[0m");
   console.log("\x1b[38;5;99m└────────────────────────────────────────────────────────┘\x1b[0m");
 

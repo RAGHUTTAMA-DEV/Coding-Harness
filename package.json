@@ -2,8 +2,12 @@
   "name": "agent-harness",
   "version": "1.0.0",
   "type": "module",
+  "bin": {
+    "harness": "./dist/cli/headless.js"
+  },
   "scripts": {
-    "start": "bun run src/cli/repl.ts"
+    "start": "bun run src/cli/repl.ts",
+    "build": "bun build src/cli/headless.ts --outfile dist/cli/headless.js --target bun"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

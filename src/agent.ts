@@ -24,6 +24,11 @@ export class Agent {
   public isRunning: boolean = false;
   private isSubAgent: boolean = false;
   private toolExecutionMode: "sequential" | "parallel";
+  private headless: boolean = false;
+  private autoConfirm: boolean = false;
+  private maxIterations?: number;
+  private cwd?: string;
+  private filesChanged: Set<string> = new Set();
 
   constructor(options: {
     client: ChatModelClient;
@@ -32,11 +37,24 @@ export class Agent {
     tokenThreshold?: number;
     isSubAgent?: boolean;
     toolExecutionMode?: "sequential" | "parallel";
+    headless?: boolean;
+    autoConfirm?: boolean;
+    maxIterations?: number;
+    cwd?: string;
   }) {
     this.client = options.client;
     this.rl = options.rl;
     this.isSubAgent = options.isSubAgent || false;
     this.toolExecutionMode = options.toolExecutionMode || "parallel";
+    this.headless = options.headless || false;
+    this.autoConfirm = options.autoConfirm || false;
+    this.maxIterations = options.maxIterations;
+    if (options.cwd) {
+      this.cwd = path.resolve(options.cwd);
+      process.chdir(this.cwd);
+    } else {
+      this.cwd = process.cwd();
+    }
 
     // Track active client in tool registry
     setActiveClient(this.client);
@@ -134,6 +152,10 @@ Strict Guidelines:
     return this.contextManager.getTokenThreshold();
   }
 
+  getFilesChanged(): string[] {
+    return Array.from(this.filesChanged);
+  }
+
   /**
    * Returns tool definitions available to the agent.
    * If running as a sub-agent, restricts definitions to safe, read-only tools.
@@ -155,6 +177,7 @@ Strict Guidelines:
    */
   async run(userInput: string, events: AgentEvents = {}): Promise<string> {
     this.isRunning = true;
+    this.filesChanged.clear();
     try {
       // Add user message to history
       this.contextManager.addMessage({
@@ -164,8 +187,13 @@ Strict Guidelines:
 
       let keepLooping = true;
       let finalAssistantText = "";
+      let iterations = 0;
 
       while (keepLooping) {
+        iterations++;
+        if (this.maxIterations !== undefined && iterations > this.maxIterations) {
+          throw new Error(`Max iterations cap of ${this.maxIterations} reached.`);
+        }
         // Handle user steering interruption
         if (this.isInterrupted) {
           this.isInterrupted = false;
@@ -269,7 +297,8 @@ Strict Guidelines:
                     approved = await PermissionGate.checkPermission(
                       tool.name,
                       toolArgs,
-                      this.rl
+                      this.rl,
+                      this.autoConfirm
                     );
                   }
 
@@ -283,6 +312,10 @@ Strict Guidelines:
                         toolArgs.path &&
                         !result.startsWith("Error:")
                       ) {
+                        const resolvedPath = path.resolve(toolArgs.path);
+                        const relPath = this.cwd ? path.relative(this.cwd, resolvedPath) : path.relative(process.cwd(), resolvedPath);
+                        this.filesChanged.add(relPath.replace(/\\/g, "/"));
+
                         const invalidatedCount = this.contextManager.invalidateStaleReads(
                           toolArgs.path
                         );
@@ -360,7 +393,8 @@ Strict Guidelines:
               approved = await PermissionGate.checkPermission(
                 tool.name,
                 toolArgs,
-                this.rl
+                this.rl,
+                this.autoConfirm
               );
             }
 
@@ -396,6 +430,10 @@ Strict Guidelines:
                   toolArgs.path &&
                   !result.startsWith("Error:")
                 ) {
+                  const resolvedPath = path.resolve(toolArgs.path);
+                  const relPath = this.cwd ? path.relative(this.cwd, resolvedPath) : path.relative(process.cwd(), resolvedPath);
+                  this.filesChanged.add(relPath.replace(/\\/g, "/"));
+
                   const invalidatedCount = this.contextManager.invalidateStaleReads(
                     toolArgs.path
                   );

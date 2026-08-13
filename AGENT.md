@@ -1,4 +1,4 @@
-# Antigravity Agent Harness - Project Memory
+# Coding-harness Project Memory
 
 Welcome! This is the project memory file for the Antigravity Custom Agent Harness.
 

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quick Notes</title>
+    <style>
+        :root { --bg: #ffffff; --text: #333; --card-bg: #f4f4f4; }
+        .dark-mode { --bg: #1a1a1a; --text: #e0e0e0; --card-bg: #2d2d2d; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); max-width: 600px; margin: 2rem auto; padding: 0 1rem; transition: 0.3s; }
+        h1 { text-align: center; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex-grow: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        button { padding: 10px 15px; cursor: pointer; border-radius: 5px; border: none; background: #007bff; color: white; }
+        .note { background: var(--card-bg); padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <h1>My Notes</h1>
+    <div class="controls">
+        <input type="text" id="noteInput" placeholder="Add a new note...">
+        <button onclick="addNote()">Add</button>
+        <button onclick="toggleDarkMode()">🌓</button>
+    </div>
+    <div id="notesList"></div>
+
+    <script>
+        function toggleDarkMode() { document.body.classList.toggle('dark-mode'); }
+        async function fetchNotes() {
+            const res = await fetch('/api/notes');
+            const notes = await res.json();
+            const list = document.getElementById('notesList');
+            list.innerHTML = notes.map(n => `
+                <div class="note">
+                    ${n.content}
+                    <button style="background: #dc3545;" onclick="deleteNote(${n.id})">Delete</button>
+                </div>
+            `).join('');
+        }
+        async function addNote() {
+            const input = document.getElementById('noteInput');
+            if(!input.value) return;
+            await fetch('/api/notes', { method: 'POST', body: JSON.stringify({ content: input.value }) });
+            input.value = '';
+            fetchNotes();
+        }
+        async function deleteNote(id) {
+            await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+            fetchNotes();
+        }
+        fetchNotes();
+    </script>
+</body>
+</html>

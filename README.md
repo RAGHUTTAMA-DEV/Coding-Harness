@@ -6,8 +6,19 @@ It natively orchestrates tool-calling, multi-layered context memory, tree-struct
 
 ---
 
+## 📹 Demo
+
+> 🎬 **Watch Coding Harness in Action**:
+
+<video src="assets/Coding-Harness.mp4" controls="controls" style="max-width: 100%; height: auto;"></video>
+
+[🎥 Open Demo Video (assets/Coding-Harness.mp4)](assets/Coding-Harness.mp4)
+
+---
+
 ## 📋 Table of Contents
 
+- [📹 Demo](#-demo)
 - [✨ Features](#-features)
 - [🏗️ High-Level Architecture](#️-high-level-architecture)
 - [🧠 Context Management Engine](#-context-management-engine)

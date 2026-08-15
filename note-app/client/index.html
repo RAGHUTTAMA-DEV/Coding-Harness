@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Modern Notes</title>
+    <style>
+        :root { --bg: #fff; --text: #000; --card: #f4f4f4; }
+        body.dark { --bg: #222; --text: #fff; --card: #333; }
+        body { background: var(--bg); color: var(--text); font-family: sans-serif; transition: 0.3s; padding: 20px; }
+        .container { max-width: 600px; margin: auto; }
+        input { padding: 10px; width: 70%; }
+        button { padding: 10px; cursor: pointer; }
+        ul { list-style: none; padding: 0; }
+        li { background: var(--card); margin: 10px 0; padding: 15px; display: flex; justify-content: space-between; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Notes</h1>
+        <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
+        <br><br>
+        <input type="text" id="noteInput" placeholder="Enter a note">
+        <button onclick="addNote()">Add Note</button>
+        <ul id="noteList"></ul>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/notes';
+
+        function toggleDarkMode() { document.body.classList.toggle('dark'); }
+
+        async function fetchNotes() {
+            const res = await fetch(API_URL);
+            const notes = await res.json();
+            const list = document.getElementById('noteList');
+            list.innerHTML = notes.map(n => `<li>${n.text} <button onclick="deleteNote(${n.id})">Delete</button></li>`).join('');
+        }
+
+        async function addNote() {
+            const input = document.getElementById('noteInput');
+            if(!input.value) return;
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: input.value })
+            });
+            input.value = '';
+            fetchNotes();
+        }
+
+        async function deleteNote(id) {
+            await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+            fetchNotes();
+        }
+
+        fetchNotes();
+    </script>
+</body>
+</html>

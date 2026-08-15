@@ -14,7 +14,6 @@ export type { Tool };
 
 export { activeClient, setActiveClient } from "./activeClient";
 
-// Registry containing all available tools
 export const tools: Tool[] = [
   readTool,
   writeTool,
@@ -28,12 +27,10 @@ export const tools: Tool[] = [
   subAgentTool
 ];
 
-// Helper to look up a tool by name
 export function getToolByName(name: string): Tool | undefined {
   return tools.find(t => t.name === name);
 }
 
-// Convert our registry tools to definitions suitable for the API client
 export function getToolDefinitions(): ToolDefinition[] {
   return tools.map(t => ({
     name: t.name,
@@ -41,4 +38,3 @@ export function getToolDefinitions(): ToolDefinition[] {
     input_schema: t.input_schema
   }));
 }
-

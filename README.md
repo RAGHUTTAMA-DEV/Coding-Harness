@@ -10,9 +10,9 @@ It natively orchestrates tool-calling, multi-layered context memory, tree-struct
 
 > 🎬 **Watch Coding Harness in Action**:
 
-<video src="https://raw.githubusercontent.com/RAGHUTTAMA-DEV/Coding-Harness/main/assets/Coding-Harness.mp4" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/3f5fd0eb-9492-4636-aeab-4bb0e74cddf1" controls width="100%"></video>
 
-[🎥 Watch Demo Video (assets/Coding-Harness.mp4)](https://raw.githubusercontent.com/RAGHUTTAMA-DEV/Coding-Harness/main/assets/Coding-Harness.mp4)
+[🎥 Watch Demo Video](https://github.com/user-attachments/assets/3f5fd0eb-9492-4636-aeab-4bb0e74cddf1)
 
 ---
 

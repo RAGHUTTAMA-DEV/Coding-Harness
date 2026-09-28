@@ -12,7 +12,7 @@ export class SecretScanner implements GuardrailPolicy {
   private static patterns: SecretPattern[] = [
     { name: "OpenAI API Key", regex: /sk-[a-zA-Z0-9]{20,}/g },
     { name: "Anthropic API Key", regex: /sk-ant-api[a-zA-Z0-9_-]{20,}/g },
-    { name: "Google API Key", regex: /AIzaSy[a-zA-Z0-9_-]{33}/g },
+    { name: "Google API Key", regex: /AIzaSy[a-zA-Z0-9_-]{30,40}/g },
     { name: "GitHub Personal Access Token", regex: /gh[pousr]_[A-Za-z0-9_]{36,}/g },
     { name: "AWS Access Key ID", regex: /AKIA[0-9A-Z]{16}/g },
     { name: "AWS Secret Access Key", regex: /(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*["']?([A-Za-z0-9/+=]{40})["']?/gi },

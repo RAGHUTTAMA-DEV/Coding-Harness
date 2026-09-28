@@ -5,9 +5,8 @@ export class CommandPolicy implements GuardrailPolicy {
   description = "Semantically classifies shell commands into risk tiers and enforces ALLOW/ASK/DENY guardrails.";
 
   private criticalPatterns: RegExp[] = [
-    /^rm\s+-(?:rf|fr|r\s*-f|f\s*-r)\s+[/~]/i, // rm -rf / or ~
-    /^rm\s+-(?:rf|fr|r\s*-f|f\s*-r)\s+\.\.(?:[/\\].*)?$/i, // rm -rf ..
-    /\b(?:rmdir|del)\b.*\b\/s\b.*[\\/](?:windows|system32)/i,
+    /^rm\s+-(?:rf|fr|r\s*-f|f\s*-r)\b/i,
+    /\b(?:rmdir|del)\b.*\b\/s\b/i,
     /^(?::\(\)\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:)$/, // Fork bomb
     /^\s*dd\s+if=/i,
     /^\s*mkfs\b/i,

@@ -6,6 +6,7 @@ import { PathPolicy } from "./pathPolicy";
 import { CommandPolicy } from "./commandPolicy";
 import { SecretScanner } from "./secretScanner";
 import { ResourcePolicy } from "./resourcePolicy";
+import { NetworkPolicy } from "./networkPolicy";
 import { computeDiff, formatDiff } from "../utils/diff";
 import { applyEditContent } from "../tools/edit";
 
@@ -20,7 +21,8 @@ export class PolicyEngine {
         new PathPolicy(),
         new CommandPolicy(),
         new ResourcePolicy(),
-        new SecretScanner()
+        new SecretScanner(),
+        new NetworkPolicy()
       ];
     }
   }

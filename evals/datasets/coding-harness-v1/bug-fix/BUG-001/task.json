@@ -1,0 +1,38 @@
+{
+  "id": "BUG-001",
+  "version": "1.0",
+  "category": "bug-fix",
+  "difficulty": "L1",
+  "description": "Fix off-by-one bug in chunkArray utility function",
+  "prompt": "Fix the bug in src/utils/chunk.ts where chunkArray produces incorrect chunks when array length is not evenly divisible by size. Keep existing function signatures.",
+  "requirements": [
+    "chunkArray([1, 2, 3, 4, 5], 2) should return [[1, 2], [3, 4], [5]]",
+    "chunkArray([], 3) should return []",
+    "Throw Error if size <= 0"
+  ],
+  "verification": {
+    "testCommand": "bun test chunk.test.ts"
+  },
+  "constraints": {
+    "forbiddenPaths": [
+      ".env",
+      "package.json"
+    ],
+    "requiredPaths": [
+      "src/utils/chunk.ts"
+    ]
+  },
+  "hiddenTests": {
+    "files": [
+      {
+        "path": "chunk.test.ts",
+        "content": "import { expect, test } from 'bun:test';\nimport { chunkArray } from './src/utils/chunk';\n\ntest('chunkArray splits evenly', () => {\n  expect(chunkArray([1, 2, 3, 4], 2)).toEqual([[1, 2], [3, 4]]);\n});\n\ntest('chunkArray splits unevenly', () => {\n  expect(chunkArray([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);\n});\n\ntest('chunkArray handles empty array', () => {\n  expect(chunkArray([], 2)).toEqual([]);\n});\n\ntest('chunkArray rejects zero or negative size', () => {\n  expect(() => chunkArray([1, 2], 0)).toThrow();\n  expect(() => chunkArray([1, 2], -1)).toThrow();\n});\n"
+      }
+    ]
+  },
+  "limits": {
+    "maxIterations": 15,
+    "maxToolCalls": 30,
+    "maxExecutionTimeSeconds": 180
+  }
+}

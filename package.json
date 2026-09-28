@@ -7,6 +7,7 @@
   },
   "scripts": {
     "start": "bun run src/cli/repl.ts",
+    "eval": "bun run src/cli/eval.ts",
     "build": "bun build src/cli/headless.ts --outfile dist/cli/headless.js --target bun"
   },
   "devDependencies": {

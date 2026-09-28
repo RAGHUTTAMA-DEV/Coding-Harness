@@ -1,0 +1,38 @@
+{
+  "id": "FEAT-001",
+  "version": "1.0",
+  "category": "feature",
+  "difficulty": "L2",
+  "description": "Implement token bucket rate limiter in TypeScript",
+  "prompt": "Implement a TokenBucket rate limiter class in src/rateLimiter.ts with capacity, refillRate, and tryConsume(tokens = 1): boolean method.",
+  "requirements": [
+    "TokenBucket constructor accepts capacity: number and refillRatePerSecond: number",
+    "tryConsume returns true when enough tokens exist and false otherwise",
+    "Tokens refill dynamically over elapsed time up to capacity"
+  ],
+  "verification": {
+    "testCommand": "bun test rateLimiter.test.ts"
+  },
+  "constraints": {
+    "forbiddenPaths": [
+      ".env",
+      "package.json"
+    ],
+    "requiredPaths": [
+      "src/rateLimiter.ts"
+    ]
+  },
+  "hiddenTests": {
+    "files": [
+      {
+        "path": "rateLimiter.test.ts",
+        "content": "import { expect, test } from 'bun:test';\nimport { TokenBucket } from './src/rateLimiter';\n\ntest('TokenBucket allows consuming tokens up to capacity', () => {\n  const bucket = new TokenBucket(3, 1);\n  expect(bucket.tryConsume(1)).toBe(true);\n  expect(bucket.tryConsume(1)).toBe(true);\n  expect(bucket.tryConsume(1)).toBe(true);\n  expect(bucket.tryConsume(1)).toBe(false);\n});\n\ntest('TokenBucket refills tokens over time', async () => {\n  const bucket = new TokenBucket(2, 10);\n  expect(bucket.tryConsume(2)).toBe(true);\n  expect(bucket.tryConsume(1)).toBe(false);\n  await new Promise((r) => setTimeout(r, 120));\n  expect(bucket.tryConsume(1)).toBe(true);\n});\n"
+      }
+    ]
+  },
+  "limits": {
+    "maxIterations": 25,
+    "maxToolCalls": 50,
+    "maxExecutionTimeSeconds": 300
+  }
+}

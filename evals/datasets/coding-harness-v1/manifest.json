@@ -1,0 +1,9 @@
+{
+  "name": "coding-harness-v1",
+  "version": "1.0.0",
+  "description": "Standard benchmark dataset for autonomous coding harness evaluation",
+  "tasks": [
+    "bug-fix/BUG-001",
+    "feature/FEAT-001"
+  ]
+}

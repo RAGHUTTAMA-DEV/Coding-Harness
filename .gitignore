@@ -45,3 +45,10 @@ whitespace_test_multi.txt
 valid_test.js
 invalid_test.js
 coding-subagent-integration.md
+
+assets/Athena
+.eval_results/
+.eval_workspaces/
+
+*.mp4
+assets/*.mp4

@@ -5,6 +5,9 @@ import { ChatModelClient, Message, ToolCall } from "./client";
 import { getToolByName, getToolDefinitions, setActiveClient, tools } from "./tools";
 import { PermissionGate } from "./permissions/permissionGate";
 import { ContextManager } from "./context/contextManager";
+import { PolicyEngine } from "./guardrails/policyEngine";
+import { McpManager } from "./mcp/manager";
+import { Tool } from "./tools/types";
 
 export interface AgentEvents {
   onTextChunk?: (text: string) => void;
@@ -29,6 +32,8 @@ export class Agent {
   private maxIterations?: number;
   private cwd?: string;
   private filesChanged: Set<string> = new Set();
+  private policyEngine?: PolicyEngine;
+  private mcpManager?: McpManager;
 
   constructor(options: {
     client: ChatModelClient;
@@ -41,6 +46,8 @@ export class Agent {
     autoConfirm?: boolean;
     maxIterations?: number;
     cwd?: string;
+    policyEngine?: PolicyEngine;
+    mcpManager?: McpManager;
   }) {
     this.client = options.client;
     this.rl = options.rl;
@@ -49,6 +56,13 @@ export class Agent {
     this.headless = options.headless || false;
     this.autoConfirm = options.autoConfirm || false;
     this.maxIterations = options.maxIterations;
+    this.policyEngine = options.policyEngine;
+    this.mcpManager = options.mcpManager;
+
+    if (this.mcpManager) {
+      this.mcpManager.registerToolsWithHarness();
+    }
+
     if (options.cwd) {
       this.cwd = path.resolve(options.cwd);
       process.chdir(this.cwd);
@@ -172,6 +186,29 @@ Strict Guidelines:
     }));
   }
 
+  private async checkToolPermission(tool: Tool, toolArgs: any): Promise<boolean> {
+    if (this.policyEngine) {
+      return await this.policyEngine.checkPermission(
+        tool.name,
+        toolArgs,
+        {
+          workspaceDir: this.cwd || process.cwd(),
+          autoConfirm: this.autoConfirm
+        },
+        this.rl
+      );
+    }
+    if (tool.isMutating) {
+      return await PermissionGate.checkPermission(
+        tool.name,
+        toolArgs,
+        this.rl,
+        this.autoConfirm
+      );
+    }
+    return true;
+  }
+
   /**
    * Run a single turn of the agent loop
    */
@@ -291,16 +328,8 @@ Strict Guidelines:
                 if (this.isSubAgent && tool.isMutating) {
                   result = `Error: Sub-agents are restricted from running mutating tools.`;
                 } else {
-                  // Check permissions if mutating
-                  let approved = true;
-                  if (tool.isMutating) {
-                    approved = await PermissionGate.checkPermission(
-                      tool.name,
-                      toolArgs,
-                      this.rl,
-                      this.autoConfirm
-                    );
-                  }
+                  // Check permissions (via PolicyEngine guardrails if provided, otherwise PermissionGate)
+                  const approved = await this.checkToolPermission(tool, toolArgs);
 
                   if (!approved) {
                     result = `Error: Permission denied by user for executing '${tool.name}'.`;
@@ -387,16 +416,8 @@ Strict Guidelines:
               continue;
             }
 
-            // Check permissions sequentially
-            let approved = true;
-            if (tool.isMutating) {
-              approved = await PermissionGate.checkPermission(
-                tool.name,
-                toolArgs,
-                this.rl,
-                this.autoConfirm
-              );
-            }
+            // Check permissions sequentially (via PolicyEngine guardrails if provided, otherwise PermissionGate)
+            const approved = await this.checkToolPermission(tool, toolArgs);
 
             if (!approved) {
               preparedCalls.push({

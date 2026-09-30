@@ -63,11 +63,18 @@ export class SecretScanner implements GuardrailPolicy {
       return { decision: "ALLOW", risk: "LOW" };
     }
 
-    // Inspect content or command text for secrets being passed
+    // Inspect content, command text, and arbitrary tool arguments (including MCP parameters)
     const textToInspect: string[] = [];
-    if (typeof args.content === "string") textToInspect.push(args.content);
-    if (typeof args.command === "string") textToInspect.push(args.command);
-    if (typeof args.text === "string") textToInspect.push(args.text);
+    const collectStrings = (obj: any) => {
+      if (typeof obj === "string") {
+        textToInspect.push(obj);
+      } else if (Array.isArray(obj)) {
+        for (const item of obj) collectStrings(item);
+      } else if (obj && typeof obj === "object") {
+        for (const val of Object.values(obj)) collectStrings(val);
+      }
+    };
+    collectStrings(args);
 
     const findings: string[] = [];
     for (const content of textToInspect) {

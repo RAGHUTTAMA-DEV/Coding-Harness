@@ -38,14 +38,24 @@ function loadEnvFile(filePath: string) {
 async function main() {
   const args = process.argv.slice(2);
 
+  if (args[0] === "mcp") {
+    const { spawnSync } = await import("child_process");
+    const mcpCliPath = path.resolve(import.meta.dir, "mcp.ts");
+    const res = spawnSync("bun", ["run", mcpCliPath, ...args.slice(1)], {
+      stdio: "inherit"
+    });
+    process.exit(res.status ?? 0);
+  }
+
   if (args.includes("--help") || args.includes("-h")) {
     const helpMessage = `
 CODING-HARNESS (v1.2) - Headless Mode CLI
 
 Usage:
   harness --task "<task-description>" --cwd <repo-path> [options]
+  harness mcp <list|tools|add|remove|test> [options]
 
-Required Options:
+Required Options for Task Execution:
   --task "<description>"  Clear description of the coding task to perform.
   --cwd <path>            Absolute path to the target repository/project directory.
 

@@ -34,13 +34,12 @@ export class PathPolicy implements GuardrailPolicy {
     args: any,
     context: GuardrailContext
   ): Promise<GuardrailEvaluationResult> {
-    // Only inspect tools that interact with file paths
-    const fileTools = ["read_file", "write_file", "edit_file", "check_syntax"];
-    if (!fileTools.includes(toolName) || !args || typeof args.path !== "string") {
+    const rawPathCandidate = args?.path ?? args?.filePath ?? args?.targetPath;
+    if (typeof rawPathCandidate !== "string") {
       return { decision: "ALLOW", risk: "LOW" };
     }
 
-    const rawPath = args.path.trim();
+    const rawPath = rawPathCandidate.trim();
     if (!rawPath) {
       return {
         decision: "DENY",
@@ -86,12 +85,22 @@ export class PathPolicy implements GuardrailPolicy {
       }
     }
 
+    // Determine if tool action is mutating
+    const isMutatingAction =
+      toolName === "write_file" ||
+      toolName === "edit_file" ||
+      toolName.includes("write") ||
+      toolName.includes("edit") ||
+      toolName.includes("delete") ||
+      toolName.includes("remove") ||
+      toolName.includes("modify");
+
     // 3. Check for sensitive files
     const normalizedRel = rel.replace(/\\/g, "/");
     for (const pattern of this.sensitivePatterns) {
       if (pattern.test(normalizedRel) || pattern.test(path.basename(resolvedPath))) {
         // Read tools might require ASK, mutating tools strictly DENY or ASK
-        if (toolName === "write_file" || toolName === "edit_file") {
+        if (isMutatingAction) {
           return {
             decision: "DENY",
             risk: "CRITICAL",
@@ -110,7 +119,7 @@ export class PathPolicy implements GuardrailPolicy {
     }
 
     // Mutating actions require confirmation in interactive mode, otherwise LOW risk
-    if (toolName === "write_file" || toolName === "edit_file") {
+    if (isMutatingAction) {
       return {
         decision: context.autoConfirm ? "ALLOW" : "ASK",
         risk: "MEDIUM",

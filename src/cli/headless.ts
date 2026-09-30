@@ -3,6 +3,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { GeminiClient, OllamaClient } from "../client";
 import { Agent } from "../agent";
+import { McpServerRegistry } from "../mcp/serverRegistry";
+import { McpManager } from "../mcp/manager";
+import { PolicyEngine } from "../guardrails/policyEngine";
 
 // 1. Redirect console output to stderr to keep stdout 100% clean for JSON output
 console.log = console.error;
@@ -151,8 +154,8 @@ Optional Options:
       buildClient: () => new GeminiClient({ model: "gemini-1.5-flash" })
     },
     {
-      label: "Gemini: gemini-1.5-pro",
-      buildClient: () => new GeminiClient({ model: "gemini-1.5-pro" })
+      label: "Gemini: gemini-2.5-flash",
+      buildClient: () => new GeminiClient({ model: "gemini-2.5-flash" })
     },
     {
       label: "Gemini: gemini-3.1-flash-lite",
@@ -186,14 +189,50 @@ Optional Options:
     }
   }
 
-  // 4. Initialize agent and run the task to completion
+  // 4. Auto-discover and connect configured MCP servers (e.g. DuckDuckGo)
+  const mcpConfigCandidates = [
+    path.resolve(resolvedCwd, ".mcp.json"),
+    path.resolve(harnessRoot, ".mcp.json")
+  ];
+  const mcpConfigPath = mcpConfigCandidates.find(p => fs.existsSync(p));
+  const mcpRegistry = new McpServerRegistry([], mcpConfigPath);
+  if (mcpConfigPath) {
+    mcpRegistry.loadFromFile();
+  }
+
+  const policyEngine = new PolicyEngine();
+  const mcpManager = new McpManager({
+    registry: mcpRegistry,
+    policyEngine,
+    getGuardrailContext: () => ({
+      workspaceDir: resolvedCwd,
+      autoConfirm: true
+    })
+  });
+
+  const enabledServers = mcpRegistry.getEnabledServers();
+  if (enabledServers.length > 0) {
+    try {
+      const { connected } = await mcpManager.connectAll();
+      if (connected.length > 0) {
+        await mcpManager.discoverAllTools();
+        mcpManager.registerToolsWithHarness();
+      }
+    } catch {
+      // Continue even if an optional MCP server fails
+    }
+  }
+
+  // 5. Initialize agent and run the task to completion
   const agent = new Agent({
     client: activeClient,
     cwd: resolvedCwd,
     headless: true,
     autoConfirm: true,
     maxIterations: maxIterations ?? 30, // Safe default max iterations
-    tokenThreshold: 8000
+    tokenThreshold: 8000,
+    policyEngine,
+    mcpManager
   });
 
   try {

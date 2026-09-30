@@ -5,6 +5,9 @@ import { GeminiClient, OllamaClient } from "../client";
 import { Agent } from "../agent";
 import { SessionStore } from "../session/sessionStore";
 import { tools } from "../tools";
+import { McpServerRegistry } from "../mcp/serverRegistry";
+import { McpManager } from "../mcp/manager";
+import { PolicyEngine } from "../guardrails/policyEngine";
 
 type ModelChoice = {
   label: string;
@@ -233,10 +236,10 @@ async function main() {
       buildClient: () => new GeminiClient({ model: "gemini-1.5-flash" })
     },
     {
-      label: "Gemini: gemini-1.5-pro",
+      label: "Gemini: gemini-2.5-flash",
       provider: "gemini",
-      model: "gemini-1.5-pro",
-      buildClient: () => new GeminiClient({ model: "gemini-1.5-pro" })
+      model: "gemini-2.5-flash",
+      buildClient: () => new GeminiClient({ model: "gemini-2.5-flash" })
     },
     {
       label: "Gemini: gemini-3.1-flash-lite",
@@ -256,8 +259,44 @@ async function main() {
         activeModelLabel = matched.label;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
   let activeClient = availableModels.find((m) => m.label === activeModelLabel)!.buildClient();
+
+  // 1. Auto-discover and connect configured MCP servers (e.g. DuckDuckGo)
+  const mcpConfigPath = path.resolve(process.cwd(), ".mcp.json");
+  const mcpRegistry = new McpServerRegistry([], mcpConfigPath);
+  mcpRegistry.loadFromFile();
+
+  const policyEngine = new PolicyEngine();
+  const mcpManager = new McpManager({
+    registry: mcpRegistry,
+    policyEngine,
+    getGuardrailContext: () => ({
+      workspaceDir: process.cwd(),
+      autoConfirm: false
+    })
+  });
+
+  const enabledServers = mcpRegistry.getEnabledServers();
+  if (enabledServers.length > 0) {
+    try {
+      const serverNames = enabledServers.map((s) => s.id).join(", ");
+      console.log(`\x1b[90mConnecting to configured MCP servers (${serverNames})...\x1b[0m`);
+      const { connected, failed } = await mcpManager.connectAll();
+      for (const f of failed) {
+        console.log(`  \x1b[33m⚠️  MCP server '${f.id}' failed to connect: ${f.error}\x1b[0m`);
+      }
+      if (connected.length > 0) {
+        const discovered = await mcpManager.discoverAllTools();
+        mcpManager.registerToolsWithHarness();
+        console.log(
+          `  \x1b[32m✔ Connected to ${connected.length} MCP server(s) (${discovered.length} external tool(s): ${discovered.map(t => t.name).join(", ")})\x1b[0m`
+        );
+      }
+    } catch (e: any) {
+      console.log(`  \x1b[33m⚠️  MCP initialization error: ${e.message}\x1b[0m`);
+    }
+  }
 
   printHeaderBanner(activeModelLabel);
 
@@ -280,7 +319,13 @@ async function main() {
     output: process.stdout
   });
 
-  const agent = new Agent({ client: activeClient, rl, tokenThreshold: 8000 });
+  const agent = new Agent({
+    client: activeClient,
+    rl,
+    tokenThreshold: 8000,
+    policyEngine,
+    mcpManager
+  });
 
   let currentSessionId = `session_${Date.now()}`;
   const latestSessionId = await SessionStore.getLatestSessionId();
@@ -333,7 +378,7 @@ async function main() {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(path.join(dir, "active_model.txt"), choice.label, "utf-8");
-    } catch (e) {}
+    } catch (e) { }
   };
 
   rl.on("SIGINT", () => {
@@ -487,7 +532,7 @@ async function main() {
               } else if (args.query) {
                 summary = ` \x1b[90m("${args.query}")\x1b[0m`;
               }
-            } catch (e) {}
+            } catch (e) { }
             console.log(`\x1b[38;5;208m🔸 [Tool Call]\x1b[0m \x1b[1m${toolCall.function.name}\x1b[0m${summary}`);
           },
           onToolResult: (toolCall, result) => {

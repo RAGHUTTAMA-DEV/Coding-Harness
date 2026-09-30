@@ -31,6 +31,10 @@ export class ContextManager {
     this.client = client;
   }
 
+  setSystemPrompt(prompt: string) {
+    this.systemPrompt = prompt;
+  }
+
   /**
    * Adds a user or assistant/tool message to the history.
    */

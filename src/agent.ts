@@ -70,38 +70,10 @@ export class Agent {
       this.cwd = process.cwd();
     }
 
-    // Track active client in tool registry
     setActiveClient(this.client);
     
-    // Set a solid default system prompt if none is provided
-    this.systemPrompt = options.systemPrompt || `You are an advanced agentic coding assistant called Coding-Harness.
-You are running on the user's host machine.
-Current Working Directory: ${process.cwd()}
-Platform: ${process.platform}
+    this.systemPrompt = options.systemPrompt || this.buildDefaultSystemPrompt();
 
-You have access to tools: 'read_file', 'write_file', 'edit_file', 'run_command', 'check_syntax', 'glob', 'grep', 'todo_read', and 'todo_write'.
-- Use 'read_file' to view file contents.
-- Use 'write_file' to create or completely overwrite files.
-- Use 'edit_file' to apply targeted find-and-replace changes. Optionally use startLine and endLine for line-targeted range editing, with sliding-window drift recovery. Prefer 'edit_file' over 'write_file' when editing existing code.
-- Use 'run_command' to run shell commands (compiling, running tests, installing packages, etc.).
-- Use 'check_syntax' to verify a JS/TS file's syntax or compilation errors. Always run this tool after editing or writing a JavaScript/TypeScript file to verify its syntax.
-- Use 'glob' to list files/directories and search using wildcards. Always check what files exist before guessing their names or trying to read them!
-- Use 'grep' to search for substrings or regular expressions across files to locate declarations, usages, or references.
-- Use 'todo_read' to read the project's task list (TODOs).
-- Use 'todo_write' to update the project's task list (TODOs).
-
-Strict Guidelines:
-1. Be direct, professional, and clear. Avoid verbose pleasantries.
-2. Systematic Exploration: NEVER guess the layout of the codebase, directory structures, or file names. Always use the 'glob' or 'grep' tools first to discover files, locate directories, and explore the workspace before attempting to read or edit.
-3. Plan and Track Tasks: For any multi-step task, start by reading the current TODO checklist using 'todo_read'. If it does not exist, create it with 'todo_write' to list the steps. Keep the checklist updated as you execute tasks.
-4. Read Before Editing: Always use 'read_file' on a file before trying to edit it with 'edit_file'. This ensures you know the exact line numbers, code contents, and indentation, avoiding find-and-replace failures.
-5. Verify Modifications: Always run 'check_syntax' after writing or editing a JavaScript or TypeScript file. For other files or codebases, run tests or verify builds using 'run_command'.
-6. Complete Code: Write fully-functional code. Do not use placeholders, shorthand, or leave sections for the user to implement.
-7. Immediate Tool Execution: You MUST call tools in the same turn to execute your planned changes. Never explain what you are about to do in text and stop without outputting the tool call. If you say "Let me make these changes" or "I will write this file", you must output the corresponding tool call in the same response block.
-8. Safe Recovery: If a tool call fails, inspect the error output, diagnose the issue, and try an alternative approach.
-`;
-
-    // Load AGENT.md if it exists in the workspace
     let projectMemory: string | null = null;
     try {
       const agentMdPath = path.resolve(process.cwd(), "AGENT.md");
@@ -109,7 +81,6 @@ Strict Guidelines:
         projectMemory = fs.readFileSync(agentMdPath, "utf-8");
       }
     } catch (e) {
-      // Ignore reading error
     }
 
     this.contextManager = new ContextManager({
@@ -120,9 +91,6 @@ Strict Guidelines:
     });
   }
 
-  /**
-   * Swap the active model client while preserving the current conversation history.
-   */
   setClient(client: ChatModelClient) {
     this.client = client;
     this.contextManager.setClient(client);
@@ -168,6 +136,57 @@ Strict Guidelines:
 
   getFilesChanged(): string[] {
     return Array.from(this.filesChanged);
+  }
+
+  /**
+   * Dynamically constructs the system prompt to include all current tools,
+   * specifically highlighting external MCP tools (like web search).
+   */
+  public buildDefaultSystemPrompt(): string {
+    const cwd = this.cwd || process.cwd();
+    const platform = process.platform;
+
+    // List all registered tools with descriptions
+    const toolList = tools.map((t) => `- '${t.name}': ${t.description}`).join("\n");
+
+    const mcpTools = tools.filter((t) => t.name.startsWith("mcp_"));
+    const mcpGuidance =
+      mcpTools.length > 0
+        ? `\n\nExternal MCP Tools Configured:\n${mcpTools
+            .map((t) => `- '${t.name}': ${t.description}`)
+            .join("\n")}\n* CRITICAL INSTRUCTION FOR EXTERNAL TOOLS: When the user asks you to search the web, lookup real-time information, research an API, or find anything on the internet, YOU MUST invoke the external web search tool ('mcp_duckduckgo_web_search') instead of refusing or saying you lack web access!`
+        : "";
+
+    return `You are an advanced agentic coding assistant called Coding-Harness.
+You are running on the user's host machine.
+Current Working Directory: ${cwd}
+Platform: ${platform}
+
+You have direct access to the following tools:
+${toolList}${mcpGuidance}
+
+Strict Guidelines:
+1. Be direct, professional, and clear. Avoid verbose pleasantries.
+2. Systematic Exploration: NEVER guess the layout of the codebase, directory structures, or file names. Always use the 'glob' or 'grep' tools first to discover files, locate directories, and explore the workspace before attempting to read or edit.
+3. Plan and Track Tasks: For any multi-step task, start by reading the current TODO checklist using 'todo_read'. If it does not exist, create it with 'todo_write' to list the steps. Keep the checklist updated as you execute tasks.
+4. Read Before Editing: Always use 'read_file' on a file before trying to edit it with 'edit_file'. This ensures you know the exact line numbers, code contents, and indentation, avoiding find-and-replace failures.
+5. Verify Modifications: Always run 'check_syntax' after writing or editing a JavaScript or TypeScript file. For other files or codebases, run tests or verify builds using 'run_command'.
+6. Complete Code: Write fully-functional code. Do not use placeholders, shorthand, or leave sections for the user to implement.
+7. Immediate Tool Execution: You MUST call tools in the same turn to execute your planned changes. Never explain what you are about to do in text and stop without outputting the tool call. If you say "Let me make these changes" or "I will write this file", you must output the corresponding tool call in the same response block.
+8. Safe Recovery: If a tool call fails, inspect the error output, diagnose the issue, and try an alternative approach.
+9. Web Search & External Tools: When the user asks to search or lookup information online, immediately call 'mcp_duckduckgo_web_search'. Never apologize or claim you do not have web access.
+`;
+  }
+
+  /**
+   * Refreshes harness tools and updates the system prompt in contextManager.
+   */
+  public refreshToolsAndSystemPrompt(): void {
+    if (this.mcpManager) {
+      this.mcpManager.registerToolsWithHarness();
+    }
+    this.systemPrompt = this.buildDefaultSystemPrompt();
+    this.contextManager.setSystemPrompt(this.systemPrompt);
   }
 
   /**

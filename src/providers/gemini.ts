@@ -19,6 +19,92 @@ export class GeminiClient implements ChatModelClient {
     this.baseUrl = options.baseUrl || "https://generativelanguage.googleapis.com/v1beta/models";
   }
 
+  private sanitizeSchema(schema: any): any {
+    if (!schema || typeof schema !== "object") {
+      return { type: "object", properties: {} };
+    }
+
+    let raw = { ...schema };
+
+    // Resolve anyOf / oneOf if present (common in JSON schemas for optional/nullable types)
+    if (Array.isArray(raw.anyOf) && raw.anyOf.length > 0) {
+      const isNullable = raw.anyOf.some((s: any) => s && (s.type === "null" || s.nullable === true));
+      const nonNullBranch = raw.anyOf.find((s: any) => s && s.type !== "null") || raw.anyOf[0];
+      raw = { ...raw, ...(typeof nonNullBranch === "object" ? nonNullBranch : {}) };
+      if (isNullable) {
+        raw.nullable = true;
+      }
+      delete raw.anyOf;
+    } else if (Array.isArray(raw.oneOf) && raw.oneOf.length > 0) {
+      const isNullable = raw.oneOf.some((s: any) => s && (s.type === "null" || s.nullable === true));
+      const nonNullBranch = raw.oneOf.find((s: any) => s && s.type !== "null") || raw.oneOf[0];
+      raw = { ...raw, ...(typeof nonNullBranch === "object" ? nonNullBranch : {}) };
+      if (isNullable) {
+        raw.nullable = true;
+      }
+      delete raw.oneOf;
+    }
+
+    // Handle type array e.g. ["string", "null"]
+    let schemaType = raw.type;
+    let isNullable = raw.nullable === true;
+    if (Array.isArray(schemaType)) {
+      if (schemaType.includes("null")) {
+        isNullable = true;
+      }
+      schemaType = schemaType.find((t: any) => t !== "null") || "string";
+    }
+
+    if (!schemaType && raw.properties) {
+      schemaType = "object";
+    }
+
+    const sanitized: any = {};
+
+    if (schemaType) {
+      sanitized.type = typeof schemaType === "string" ? schemaType.toLowerCase() : "string";
+    } else {
+      sanitized.type = "object";
+    }
+
+    if (raw.description && typeof raw.description === "string") {
+      sanitized.description = raw.description;
+    }
+
+    if (raw.format && typeof raw.format === "string") {
+      sanitized.format = raw.format;
+    }
+
+    if (isNullable) {
+      sanitized.nullable = true;
+    }
+
+    if (Array.isArray(raw.enum)) {
+      sanitized.enum = raw.enum.map((e: any) => String(e));
+    }
+
+    if (raw.properties && typeof raw.properties === "object") {
+      sanitized.properties = {};
+      for (const [key, propVal] of Object.entries(raw.properties)) {
+        sanitized.properties[key] = this.sanitizeSchema(propVal);
+      }
+    }
+
+    if (Array.isArray(raw.required)) {
+      sanitized.required = raw.required.filter((r: any) => typeof r === "string");
+    }
+
+    if (sanitized.type === "array") {
+      if (raw.items && typeof raw.items === "object") {
+        sanitized.items = this.sanitizeSchema(raw.items);
+      } else {
+        sanitized.items = { type: "string" };
+      }
+    }
+
+    return sanitized;
+  }
+
   private formatTools(tools: ToolDefinition[]) {
     if (tools.length === 0) return undefined;
 
@@ -27,7 +113,7 @@ export class GeminiClient implements ChatModelClient {
         functionDeclarations: tools.map(tool => ({
           name: tool.name,
           description: tool.description,
-          parameters: tool.input_schema
+          parameters: this.sanitizeSchema(tool.input_schema)
         }))
       }
     ];

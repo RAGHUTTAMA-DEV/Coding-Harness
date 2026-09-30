@@ -52,3 +52,6 @@ assets/Athena
 
 *.mp4
 assets/*.mp4
+
+
+.mcp.json

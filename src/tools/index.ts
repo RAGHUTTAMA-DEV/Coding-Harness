@@ -8,6 +8,11 @@ import { globTool } from "./glob";
 import { grepTool } from "./grep";
 import { todoReadTool, todoWriteTool } from "./todo";
 import { subAgentTool } from "./subagent";
+import {
+  checkpointCreateTool,
+  checkpointRollbackTool,
+  checkpointListTool
+} from "./checkpoint";
 import { Tool } from "./types";
 
 export type { Tool };
@@ -24,7 +29,10 @@ export const builtInTools: Tool[] = [
   grepTool,
   todoReadTool,
   todoWriteTool,
-  subAgentTool
+  subAgentTool,
+  checkpointCreateTool,
+  checkpointRollbackTool,
+  checkpointListTool
 ];
 
 export const tools: Tool[] = [...builtInTools];

@@ -9,6 +9,7 @@
     "start": "bun run src/cli/repl.ts",
     "eval": "bun run src/cli/eval.ts",
     "mcp": "bun run src/cli/mcp.ts",
+    "snapshot": "bun run src/cli/snapshot.ts",
     "build": "bun build src/cli/headless.ts --outfile dist/cli/headless.js --target bun"
   },
   "devDependencies": {

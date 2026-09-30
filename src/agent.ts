@@ -8,6 +8,8 @@ import { ContextManager } from "./context/contextManager";
 import { PolicyEngine } from "./guardrails/policyEngine";
 import { McpManager } from "./mcp/manager";
 import { Tool } from "./tools/types";
+import { SnapshotManager, SnapshotMetadata, CheckpointMetadata, CheckpointReason, RollbackResult } from "./snapshots";
+import { setActiveSnapshotManager } from "./tools/checkpoint";
 
 export interface AgentEvents {
   onTextChunk?: (text: string) => void;
@@ -34,6 +36,8 @@ export class Agent {
   private filesChanged: Set<string> = new Set();
   private policyEngine?: PolicyEngine;
   private mcpManager?: McpManager;
+  private snapshotManager: SnapshotManager;
+  private autoSnapshot: boolean = false;
 
   constructor(options: {
     client: ChatModelClient;
@@ -48,6 +52,8 @@ export class Agent {
     cwd?: string;
     policyEngine?: PolicyEngine;
     mcpManager?: McpManager;
+    snapshotManager?: SnapshotManager;
+    autoSnapshot?: boolean;
   }) {
     this.client = options.client;
     this.rl = options.rl;
@@ -58,6 +64,7 @@ export class Agent {
     this.maxIterations = options.maxIterations;
     this.policyEngine = options.policyEngine;
     this.mcpManager = options.mcpManager;
+    this.autoSnapshot = options.autoSnapshot || false;
 
     if (this.mcpManager) {
       this.mcpManager.registerToolsWithHarness();
@@ -69,6 +76,9 @@ export class Agent {
     } else {
       this.cwd = process.cwd();
     }
+
+    this.snapshotManager = options.snapshotManager || new SnapshotManager(this.cwd);
+    setActiveSnapshotManager(this.snapshotManager);
 
     setActiveClient(this.client);
     
@@ -136,6 +146,41 @@ export class Agent {
 
   getFilesChanged(): string[] {
     return Array.from(this.filesChanged);
+  }
+
+  getSnapshotManager(): SnapshotManager {
+    return this.snapshotManager;
+  }
+
+  async createSnapshot(description: string = "Agent snapshot"): Promise<SnapshotMetadata> {
+    return this.snapshotManager.createSnapshot({ description, creator: "agent" });
+  }
+
+  async createCheckpoint(
+    reason: CheckpointReason,
+    description?: string
+  ): Promise<CheckpointMetadata> {
+    return this.snapshotManager.createCheckpoint({
+      reason,
+      description: description || `Agent checkpoint (${reason})`,
+      conversationState: {
+        messages: this.getHistory(),
+        totalTokens: this.getTotalTokens()
+      },
+      metrics: {
+        filesChanged: this.getFilesChanged()
+      }
+    });
+  }
+
+  async restoreCheckpoint(
+    checkpointId: string
+  ): Promise<{ rollbackResult: RollbackResult; checkpoint: CheckpointMetadata }> {
+    const res = await this.snapshotManager.restoreCheckpoint(checkpointId);
+    if (res.checkpoint.conversationState?.messages) {
+      this.setHistory(res.checkpoint.conversationState.messages);
+    }
+    return res;
   }
 
   /**
@@ -235,6 +280,14 @@ Strict Guidelines:
     this.isRunning = true;
     this.filesChanged.clear();
     try {
+      if (this.autoSnapshot) {
+        try {
+          await this.createSnapshot(`Task start: ${userInput.slice(0, 80)}`);
+        } catch {
+          // Continue execution even if initial auto-snapshot fails
+        }
+      }
+
       // Add user message to history
       this.contextManager.addMessage({
         role: "user",

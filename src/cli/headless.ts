@@ -50,12 +50,23 @@ async function main() {
     process.exit(res.status ?? 0);
   }
 
+  if (args[0] === "snapshot" || args[0] === "checkpoint") {
+    const { spawnSync } = await import("child_process");
+    const snapshotCliPath = path.resolve(import.meta.dir, "snapshot.ts");
+    const res = spawnSync("bun", ["run", snapshotCliPath, ...args], {
+      stdio: "inherit"
+    });
+    process.exit(res.status ?? 0);
+  }
+
   if (args.includes("--help") || args.includes("-h")) {
     const helpMessage = `
 CODING-HARNESS (v1.2) - Headless Mode CLI
 
 Usage:
   harness --task "<task-description>" --cwd <repo-path> [options]
+  harness snapshot <create|list|restore|diff|delete> [options]
+  harness checkpoint <create|list|restore> [options]
   harness mcp <list|tools|add|remove|test> [options]
 
 Required Options for Task Execution:

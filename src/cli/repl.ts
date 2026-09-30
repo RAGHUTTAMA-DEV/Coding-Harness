@@ -8,6 +8,7 @@ import { tools } from "../tools";
 import { McpServerRegistry } from "../mcp/serverRegistry";
 import { McpManager } from "../mcp/manager";
 import { PolicyEngine } from "../guardrails/policyEngine";
+import { SnapshotManager } from "../snapshots/snapshotManager";
 
 type ModelChoice = {
   label: string;
@@ -486,6 +487,122 @@ async function main() {
           console.log(`    \x1b[38;5;220m/session switch <name>\x1b[0m  \x1b[90m- Switch to or create session <name>\x1b[0m`);
           console.log(`    \x1b[38;5;220m/session new\x1b[0m            \x1b[90m- Create a new session\x1b[0m`);
           console.log(`    \x1b[38;5;220m/session clear\x1b[0m          \x1b[90m- Clear current session history\x1b[0m\n`);
+        }
+
+        promptUser();
+        return;
+      }
+
+      if (trimmed.toLowerCase().startsWith("/snapshot")) {
+        const parts = trimmed.split(/\s+/);
+        const subCmd = parts[1] ? parts[1].toLowerCase() : "help";
+        const subArg = parts.slice(2).join(" ");
+        const snapshotManager = new SnapshotManager(process.cwd());
+
+        if (subCmd === "create") {
+          try {
+            const snap = await snapshotManager.createSnapshot({
+              description: subArg || "Snapshot from REPL",
+              creator: "user"
+            });
+            console.log(`  \x1b[32m✔ Snapshot created:\x1b[0m ${snap.id} (${snap.fileCount} files tracked)\n`);
+          } catch (e: any) {
+            console.log(`  \x1b[31m✖ Snapshot failed:\x1b[0m ${e.message}\n`);
+          }
+        } else if (subCmd === "list") {
+          const list = await snapshotManager.listSnapshots({ limit: 10 });
+          console.log(`  \x1b[38;5;220m◆ Snapshots\x1b[0m     \x1b[90mrecent snapshots:\x1b[0m`);
+          if (list.length === 0) {
+            console.log(`    \x1b[90m(no snapshots found)\x1b[0m\n`);
+          } else {
+            for (const s of list) {
+              const typeStr = s.isGitRepo ? "git" : "archive";
+              console.log(`    \x1b[38;5;220m• ${s.id}\x1b[0m \x1b[90m[${typeStr}] ${s.description}\x1b[0m`);
+            }
+            console.log();
+          }
+        } else if (subCmd === "restore") {
+          if (!subArg) {
+            console.log(`  \x1b[31m✖ Usage: /snapshot restore <snapshot_id>\x1b[0m\n`);
+          } else {
+            const res = await snapshotManager.restoreSnapshot(subArg);
+            if (res.success) {
+              console.log(`  \x1b[32m✔ Restored snapshot ${subArg}\x1b[0m (${res.restoredFiles.length} files restored, ${res.deletedFiles.length} removed)\n`);
+            } else {
+              console.log(`  \x1b[31m✖ Restore failed:\x1b[0m ${res.error}\n`);
+            }
+          }
+        } else if (subCmd === "diff") {
+          if (!subArg) {
+            console.log(`  \x1b[31m✖ Usage: /snapshot diff <snapshot_id>\x1b[0m\n`);
+          } else {
+            try {
+              const d = await snapshotManager.diff(subArg);
+              console.log(`  \x1b[36m◆ Diff Summary:\x1b[0m ${d.summary}\n`);
+              if (d.rawDiff) console.log(d.rawDiff + "\n");
+            } catch (e: any) {
+              console.log(`  \x1b[31m✖ Diff failed:\x1b[0m ${e.message}\n`);
+            }
+          }
+        } else {
+          console.log(`  \x1b[38;5;220m◆ Snapshot Commands:\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/snapshot create [desc]\x1b[0m    \x1b[90m- Create workspace snapshot\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/snapshot list\x1b[0m             \x1b[90m- List recent snapshots\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/snapshot restore <id>\x1b[0m     \x1b[90m- Restore workspace to snapshot\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/snapshot diff <id>\x1b[0m        \x1b[90m- Show diff with snapshot\x1b[0m\n`);
+        }
+
+        promptUser();
+        return;
+      }
+
+      if (trimmed.toLowerCase().startsWith("/checkpoint")) {
+        const parts = trimmed.split(/\s+/);
+        const subCmd = parts[1] ? parts[1].toLowerCase() : "help";
+        const subArg = parts.slice(2).join(" ");
+        const snapshotManager = new SnapshotManager(process.cwd());
+
+        if (subCmd === "create") {
+          try {
+            const chk = await snapshotManager.createCheckpoint({
+              reason: "manual",
+              description: subArg || "Checkpoint from REPL",
+              conversationState: { messages: agent.getHistory() }
+            });
+            console.log(`  \x1b[32m✔ Checkpoint created:\x1b[0m ${chk.id} (${chk.description})\n`);
+          } catch (e: any) {
+            console.log(`  \x1b[31m✖ Checkpoint failed:\x1b[0m ${e.message}\n`);
+          }
+        } else if (subCmd === "list") {
+          const list = await snapshotManager.listCheckpoints({ limit: 10 });
+          console.log(`  \x1b[38;5;220m◆ Checkpoints\x1b[0m   \x1b[90mrecent checkpoints:\x1b[0m`);
+          if (list.length === 0) {
+            console.log(`    \x1b[90m(no checkpoints found)\x1b[0m\n`);
+          } else {
+            for (const c of list) {
+              console.log(`    \x1b[38;5;220m• ${c.id}\x1b[0m \x1b[36m[${c.reason}]\x1b[0m \x1b[90m${c.description}\x1b[0m`);
+            }
+            console.log();
+          }
+        } else if (subCmd === "restore") {
+          if (!subArg) {
+            console.log(`  \x1b[31m✖ Usage: /checkpoint restore <checkpoint_id>\x1b[0m\n`);
+          } else {
+            try {
+              const { rollbackResult, checkpoint } = await snapshotManager.restoreCheckpoint(subArg);
+              if (checkpoint.conversationState?.messages) {
+                agent.setHistory(checkpoint.conversationState.messages);
+              }
+              console.log(`  \x1b[32m✔ Restored checkpoint ${subArg}\x1b[0m (${rollbackResult.restoredFiles.length} files restored)\n`);
+            } catch (e: any) {
+              console.log(`  \x1b[31m✖ Restore checkpoint failed:\x1b[0m ${e.message}\n`);
+            }
+          }
+        } else {
+          console.log(`  \x1b[38;5;220m◆ Checkpoint Commands:\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/checkpoint create [desc]\x1b[0m  \x1b[90m- Create full checkpoint\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/checkpoint list\x1b[0m           \x1b[90m- List recent checkpoints\x1b[0m`);
+          console.log(`    \x1b[38;5;220m/checkpoint restore <id>\x1b[0m   \x1b[90m- Restore workspace and context\x1b[0m\n`);
         }
 
         promptUser();

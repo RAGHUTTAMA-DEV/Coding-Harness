@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "snapshots": {
+    "snap_1790747237309_eb8nk": {
+      "id": "snap_1790747237309_eb8nk",
+      "timestamp": "2026-09-30T05:47:17.794Z",
+      "description": "v1",
+      "creator": "checkpoint",
+      "workspaceDir": "C:\\Users\\raghu\\OneDrive\\Documents\\Coding-harness",
+      "isGitRepo": true,
+      "gitRef": "be6a067362a943d12441a0ca4f5f5305d0ec1133",
+      "gitTree": "fb2559f910fd55f11a89e27a77abb7067fdd1dd2",
+      "fileCount": 102,
+      "tags": [
+        "checkpoint",
+        "manual"
+      ],
+      "changedFiles": [
+        "SNAPSHOTS.md",
+        "package.json",
+        "src/agent.ts",
+        "src/cli/headless.ts",
+        "src/cli/repl.ts",
+        "src/cli/snapshot.ts",
+        "src/snapshots/diff.ts",
+        "src/snapshots/index.ts",
+        "src/snapshots/rollback.ts",
+        "src/snapshots/snapshotManager.ts",
+        "src/snapshots/snapshotStore.ts",
+        "src/snapshots/types.ts",
+        "src/tests/snapshots.test.ts",
+        "src/tools/checkpoint.ts",
+        "src/tools/index.ts"
+      ]
+    }
+  },
+  "checkpoints": {
+    "chk_1790747237796_ispby": {
+      "id": "chk_1790747237796_ispby",
+      "snapshotId": "snap_1790747237309_eb8nk",
+      "timestamp": "2026-09-30T05:47:17.796Z",
+      "reason": "manual",
+      "description": "v1",
+      "workspaceDir": "C:\\Users\\raghu\\OneDrive\\Documents\\Coding-harness"
+    }
+  }
+}

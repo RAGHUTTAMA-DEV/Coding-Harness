@@ -10,6 +10,13 @@ import { McpManager } from "./mcp/manager";
 import { Tool } from "./tools/types";
 import { SnapshotManager, SnapshotMetadata, CheckpointMetadata, CheckpointReason, RollbackResult } from "./snapshots";
 import { setActiveSnapshotManager } from "./tools/checkpoint";
+import {
+  RecoveryEngine,
+  FailureContext,
+  RecoveryAction,
+  RecoveryStrategyResult,
+  LoopDetectionResult
+} from "./recovery";
 
 export interface AgentEvents {
   onTextChunk?: (text: string) => void;
@@ -18,6 +25,9 @@ export interface AgentEvents {
   onToolResult?: (toolCall: ToolCall, result: string) => void;
   onCompaction?: (summary: string) => void;
   onStaleReadInvalidated?: (filePath: string) => void;
+  onRecoveryStarted?: (context: FailureContext, action: RecoveryAction) => void;
+  onRecoveryCompleted?: (result: RecoveryStrategyResult) => void;
+  onLoopDetected?: (result: LoopDetectionResult) => void;
 }
 
 export class Agent {
@@ -38,6 +48,7 @@ export class Agent {
   private mcpManager?: McpManager;
   private snapshotManager: SnapshotManager;
   private autoSnapshot: boolean = false;
+  private recoveryEngine: RecoveryEngine;
 
   constructor(options: {
     client: ChatModelClient;
@@ -54,6 +65,7 @@ export class Agent {
     mcpManager?: McpManager;
     snapshotManager?: SnapshotManager;
     autoSnapshot?: boolean;
+    recoveryEngine?: RecoveryEngine;
   }) {
     this.client = options.client;
     this.rl = options.rl;
@@ -79,6 +91,15 @@ export class Agent {
 
     this.snapshotManager = options.snapshotManager || new SnapshotManager(this.cwd);
     setActiveSnapshotManager(this.snapshotManager);
+
+    this.recoveryEngine =
+      options.recoveryEngine ||
+      new RecoveryEngine({
+        workspaceDir: this.cwd,
+        snapshotManager: this.snapshotManager,
+        headless: this.headless,
+        rl: this.rl
+      });
 
     setActiveClient(this.client);
     
@@ -150,6 +171,74 @@ export class Agent {
 
   getSnapshotManager(): SnapshotManager {
     return this.snapshotManager;
+  }
+
+  getRecoveryEngine(): RecoveryEngine {
+    return this.recoveryEngine;
+  }
+
+  private async handleToolResultRecovery(
+    toolName: string,
+    toolArgs: any,
+    result: string,
+    events: AgentEvents
+  ): Promise<{ shouldAbort: boolean }> {
+    const isError = result.startsWith("Error:") || result.includes("Permission denied by user");
+    const isTestCommand =
+      toolName === "run_command" &&
+      /(?:npm|bun|yarn|pnpm)\s+(?:test|run\s+test)|jest|vitest|pytest|mocha\b/i.test(toolArgs?.command || "");
+    const isTestFailure =
+      isTestCommand &&
+      /\b(?:FAIL|FAILED|Tests:\s+\d+\s+failed|AssertionError|expect\(.*?\)\.to|Assertion failed)\b/i.test(result);
+
+    const isFailure = isError || isTestFailure;
+
+    const loopResult = this.recoveryEngine.recordAction(
+      toolName,
+      toolArgs,
+      isFailure ? "failure" : "success",
+      result
+    );
+
+    if (loopResult.loopDetected && events.onLoopDetected) {
+      events.onLoopDetected(loopResult);
+    }
+
+    if (isFailure || loopResult.loopDetected) {
+      const recoveryResult = await this.recoveryEngine.handleIncident({
+        error: isError ? result : undefined,
+        output: result,
+        toolName,
+        toolArgs,
+        policyDecision: result.includes("Permission denied") ? "DENY" : undefined,
+        loopDetected: loopResult.loopDetected
+      });
+
+      if (events.onRecoveryCompleted) {
+        events.onRecoveryCompleted(recoveryResult);
+      }
+
+      if (recoveryResult.instructionForAgent) {
+        this.contextManager.addMessage({
+          role: "user",
+          content: `[Harness Recovery System]: ${recoveryResult.instructionForAgent}`
+        });
+      }
+
+      if (recoveryResult.action === "ROLLBACK" && recoveryResult.success) {
+        if (recoveryResult.customData?.deletedUntrackedFiles) {
+          for (const f of recoveryResult.customData.deletedUntrackedFiles) {
+            this.filesChanged.delete(f);
+          }
+        }
+      }
+
+      if (recoveryResult.action === "ABORT") {
+        return { shouldAbort: true };
+      }
+    }
+
+    return { shouldAbort: false };
   }
 
   async createSnapshot(description: string = "Agent snapshot"): Promise<SnapshotMetadata> {
@@ -279,6 +368,10 @@ Strict Guidelines:
   async run(userInput: string, events: AgentEvents = {}): Promise<string> {
     this.isRunning = true;
     this.filesChanged.clear();
+    this.recoveryEngine.setEventCallbacks({
+      onRecoveryStarted: events.onRecoveryStarted,
+      onRecoveryCompleted: events.onRecoveryCompleted
+    });
     try {
       if (this.autoSnapshot) {
         try {
@@ -381,11 +474,11 @@ Strict Guidelines:
 
             const tool = getToolByName(toolCall.function.name);
             let result = "";
+            let toolArgs: any = toolCall.function.arguments;
 
             if (!tool) {
               result = `Error: Tool '${toolCall.function.name}' not found in registry.`;
             } else {
-              let toolArgs = toolCall.function.arguments;
               let parsingFailed = false;
               if (typeof toolArgs === "string" && toolArgs.trim() !== "") {
                 try {
@@ -443,6 +536,17 @@ Strict Guidelines:
               tool_call_id: toolCall.id,
               content: result
             });
+
+            const { shouldAbort } = await this.handleToolResultRecovery(
+              toolCall.function.name,
+              toolArgs,
+              result,
+              events
+            );
+            if (shouldAbort) {
+              keepLooping = false;
+              break;
+            }
           }
         } else {
           // Parallel logic
@@ -553,6 +657,24 @@ Strict Guidelines:
               tool_call_id: item.toolCall.id,
               content: item.result
             });
+
+            let callArgs: any = item.toolCall.function.arguments;
+            if (typeof callArgs === "string" && callArgs.trim() !== "") {
+              try {
+                callArgs = JSON.parse(callArgs);
+              } catch {}
+            }
+
+            const { shouldAbort } = await this.handleToolResultRecovery(
+              item.toolCall.function.name,
+              callArgs,
+              item.result,
+              events
+            );
+            if (shouldAbort) {
+              keepLooping = false;
+              break;
+            }
           }
         }
       }

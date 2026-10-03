@@ -17,6 +17,14 @@ import {
   RecoveryStrategyResult,
   LoopDetectionResult
 } from "./recovery";
+import {
+  Verifier,
+  TaskAnalyzer,
+  TaskPlanner,
+  VerificationConfig,
+  VerificationResult,
+  TaskAnalysis
+} from "./verification";
 
 export interface AgentEvents {
   onTextChunk?: (text: string) => void;
@@ -28,6 +36,9 @@ export interface AgentEvents {
   onRecoveryStarted?: (context: FailureContext, action: RecoveryAction) => void;
   onRecoveryCompleted?: (result: RecoveryStrategyResult) => void;
   onLoopDetected?: (result: LoopDetectionResult) => void;
+  onVerificationCompleted?: (result: VerificationResult) => void;
+  onVerificationFailed?: (result: VerificationResult) => void;
+  onTaskAnalyzed?: (analysis: TaskAnalysis) => void;
 }
 
 export class Agent {
@@ -49,6 +60,10 @@ export class Agent {
   private snapshotManager: SnapshotManager;
   private autoSnapshot: boolean = false;
   private recoveryEngine: RecoveryEngine;
+  private verifier?: Verifier;
+  private taskAnalyzer: TaskAnalyzer;
+  private enableVerification: boolean = true;
+  private maxVerificationCycles: number = 4;
 
   constructor(options: {
     client: ChatModelClient;
@@ -66,6 +81,11 @@ export class Agent {
     snapshotManager?: SnapshotManager;
     autoSnapshot?: boolean;
     recoveryEngine?: RecoveryEngine;
+    verifier?: Verifier;
+    verificationConfig?: VerificationConfig;
+    enableVerification?: boolean;
+    maxVerificationCycles?: number;
+    taskAnalyzer?: TaskAnalyzer;
   }) {
     this.client = options.client;
     this.rl = options.rl;
@@ -77,6 +97,10 @@ export class Agent {
     this.policyEngine = options.policyEngine;
     this.mcpManager = options.mcpManager;
     this.autoSnapshot = options.autoSnapshot || false;
+    this.enableVerification =
+      options.enableVerification ??
+      (options.verificationConfig !== undefined || options.verifier !== undefined);
+    this.maxVerificationCycles = options.maxVerificationCycles ?? 4;
 
     if (this.mcpManager) {
       this.mcpManager.registerToolsWithHarness();
@@ -100,6 +124,16 @@ export class Agent {
         headless: this.headless,
         rl: this.rl
       });
+
+    this.taskAnalyzer = options.taskAnalyzer || new TaskAnalyzer({ workspaceDir: this.cwd });
+
+    if (options.verifier) {
+      this.verifier = options.verifier;
+    } else if (options.verificationConfig) {
+      this.verifier = new Verifier({ workspaceDir: this.cwd, config: options.verificationConfig });
+    } else if (this.enableVerification) {
+      this.verifier = new Verifier({ workspaceDir: this.cwd });
+    }
 
     setActiveClient(this.client);
     
@@ -175,6 +209,22 @@ export class Agent {
 
   getRecoveryEngine(): RecoveryEngine {
     return this.recoveryEngine;
+  }
+
+  getVerifier(): Verifier | undefined {
+    return this.verifier;
+  }
+
+  getTaskAnalyzer(): TaskAnalyzer {
+    return this.taskAnalyzer;
+  }
+
+  setVerificationConfig(config: VerificationConfig): void {
+    if (!this.verifier) {
+      this.verifier = new Verifier({ workspaceDir: this.cwd, config });
+    } else {
+      this.verifier.setConfig(config);
+    }
   }
 
   private async handleToolResultRecovery(
@@ -387,9 +437,33 @@ Strict Guidelines:
         content: userInput
       });
 
+      // Analyze task requirements and auto-discover verification if needed
+      const analysis = this.taskAnalyzer.analyze(userInput);
+      if (events.onTaskAnalyzed) {
+        events.onTaskAnalyzed(analysis);
+      }
+
+      if (this.verifier && this.enableVerification) {
+        const curConfig = this.verifier.getConfig();
+        if (!curConfig.testCommand && analysis.discoveredVerification.testCommand) {
+          curConfig.testCommand = analysis.discoveredVerification.testCommand;
+        }
+        if (!curConfig.typecheckCommand && analysis.discoveredVerification.typecheckCommand) {
+          curConfig.typecheckCommand = analysis.discoveredVerification.typecheckCommand;
+        }
+        if (!curConfig.buildCommand && analysis.discoveredVerification.buildCommand) {
+          curConfig.buildCommand = analysis.discoveredVerification.buildCommand;
+        }
+        if (!curConfig.forbiddenPaths || curConfig.forbiddenPaths.length === 0) {
+          curConfig.forbiddenPaths = analysis.forbiddenPaths;
+        }
+        this.verifier.setConfig(curConfig);
+      }
+
       let keepLooping = true;
       let finalAssistantText = "";
       let iterations = 0;
+      let verificationCycle = 1;
 
       while (keepLooping) {
         iterations++;
@@ -460,9 +534,71 @@ Strict Guidelines:
 
         const toolCalls = assistantMessage.tool_calls;
         if (!toolCalls || toolCalls.length === 0) {
-          // No tool calls, we are done
-          keepLooping = false;
-          break;
+          // The agent proposes completion! The harness verifies whether the task actually succeeded.
+          if (this.verifier && this.enableVerification) {
+            const config = this.verifier.getConfig();
+            const hasAnyCheck =
+              Boolean(config.testCommand ||
+              config.typecheckCommand ||
+              config.buildCommand ||
+              config.lintCommand ||
+              (config.customCommands && config.customCommands.length > 0) ||
+              (config.forbiddenPaths && config.forbiddenPaths.length > 0));
+
+            if (hasAnyCheck) {
+              const filesChanged = this.getFilesChanged();
+              const verificationResult = await this.verifier.verify(filesChanged, verificationCycle);
+
+              if (verificationResult.passed) {
+                if (events.onVerificationCompleted) {
+                  events.onVerificationCompleted(verificationResult);
+                }
+                try {
+                  await this.createCheckpoint(
+                    "after_successful_verification",
+                    "Harness verified task success"
+                  );
+                } catch {}
+                keepLooping = false;
+                break;
+              } else {
+                // Verification failed! Reject completion and trigger recovery
+                if (events.onVerificationFailed) {
+                  events.onVerificationFailed(verificationResult);
+                }
+
+                verificationCycle++;
+                if (verificationCycle > this.maxVerificationCycles) {
+                  throw new Error(
+                    `Task completion rejected: verification failed after ${this.maxVerificationCycles} cycles:\n${verificationResult.failureSummary}`
+                  );
+                }
+
+                // Notify recovery engine of verification failure
+                await this.recoveryEngine.handleIncident({
+                  error: verificationResult.failureSummary,
+                  output: verificationResult.failureSummary,
+                  toolName: "verification",
+                  toolArgs: { checks: verificationResult.checks.map((c) => c.name) }
+                });
+
+                // Format feedback and inject as user message for the agent to fix
+                const feedback = Verifier.formatFeedbackForAgent(verificationResult);
+                this.contextManager.addMessage({
+                  role: "user",
+                  content: feedback
+                });
+
+                continue;
+              }
+            } else {
+              keepLooping = false;
+              break;
+            }
+          } else {
+            keepLooping = false;
+            break;
+          }
         }
 
         // Execute all tool calls
